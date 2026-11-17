@@ -1,0 +1,126 @@
+# SmartRoute on the GPU server.  Copy .env.example to .env first, then:
+#   docker compose up -d --build
+#   docker compose exec ollama ollama pull llama3.1:8b
+# Needs the NVIDIA Container Toolkit on the host (see SETUP.md).
+# NOT YET RUN: this file was written on a machine without Docker.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: smartroute
+      POSTGRES_USER: smartroute
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smartroute -d smartroute"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # OCR for photos and scanned PDFs: baidu/Unlimited-OCR served by vLLM.
+  # Flags follow https://recipes.vllm.ai/baidu/Unlimited-OCR. No port is
+  # published, so only the backend can reach it (http://ocr:8000/v1).
+  # --gpu-memory-utilization caps vLLM's share of the GPU (its default would take
+  # 90% and starve Ollama); raise it if the GPU is dedicated to OCR.
+  ocr:
+    image: vllm/vllm-openai:unlimited-ocr
+    restart: unless-stopped
+    ipc: host
+    volumes:
+      - ocr-cache:/root/.cache/huggingface
+    command:
+      - baidu/Unlimited-OCR
+      - --trust-remote-code
+      - --logits_processors
+      - vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor
+      - --no-enable-prefix-caching
+      - --mm-processor-cache-gb
+      - "0"
+      - --tensor-parallel-size
+      - "1"
+      - --max-model-len
+      - "16384"
+      - --gpu-memory-utilization
+      - ${OCR_GPU_MEMORY_UTILIZATION:-0.35}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        INSTALL_ML: "true"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    environment:
+      SMARTROUTE_ENV: production
+      SMARTROUTE_DATABASE_URL: postgresql+psycopg://smartroute:${POSTGRES_PASSWORD}@postgres:5432/smartroute
+      SMARTROUTE_SECRET_KEY: ${SMARTROUTE_SECRET_KEY:?set SMARTROUTE_SECRET_KEY in .env}
+      SMARTROUTE_ENCRYPTION_KEY: ${SMARTROUTE_ENCRYPTION_KEY:?set SMARTROUTE_ENCRYPTION_KEY in .env}
+      SMARTROUTE_BOOTSTRAP_ADMIN_EMAIL: ${SMARTROUTE_BOOTSTRAP_ADMIN_EMAIL:-admin@smartroute.local}
+      SMARTROUTE_BOOTSTRAP_ADMIN_PASSWORD: ${SMARTROUTE_BOOTSTRAP_ADMIN_PASSWORD:?set SMARTROUTE_BOOTSTRAP_ADMIN_PASSWORD in .env}
+      SMARTROUTE_CORS_ORIGINS: ${PUBLIC_WEB_URL:-http://localhost:3000}
+      SMARTROUTE_OLLAMA_BASE_URL: http://ollama:11434
+      SMARTROUTE_LOCAL_MODEL: ${SMARTROUTE_LOCAL_MODEL:-llama3.1:8b}
+      SMARTROUTE_PII_PRESIDIO: ${SMARTROUTE_PII_PRESIDIO:-true}
+      SMARTROUTE_PII_GLINER: ${SMARTROUTE_PII_GLINER:-true}
+      SMARTROUTE_EMBEDDINGS_ENABLED: ${SMARTROUTE_EMBEDDINGS_ENABLED:-false}
+      SMARTROUTE_OCR_BACKEND: ${SMARTROUTE_OCR_BACKEND:-vllm}
+      SMARTROUTE_OCR_BASE_URL: http://ocr:8000/v1
+    volumes:
+      - backend-data:/srv/backend/data
+      - backend-artifacts:/srv/backend/artifacts
+      - model-cache:/models
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  ocr-cache:
+  pgdata:
+  ollama:
+  backend-data:
+  backend-artifacts:
+  model-cache:

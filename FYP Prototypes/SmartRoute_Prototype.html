@@ -1,0 +1,1175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SmartRoute</title>
+<script>
+(function () {
+  var t = new URLSearchParams(location.search).get("theme");
+  try { if (t !== "light" && t !== "dark") t = localStorage.getItem("sr-proto-theme"); } catch (e) {}
+  if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
+})();
+</script>
+<style>
+/* Light: warm ivory with terracotta */
+:root {
+  color-scheme: light;
+  --bg: #faf9f5; --side: #f5f4ed; --side-on: #e8e6dc; --card: #ffffff; --bubble: #f0eee6; --menu-hover: #f0eee6;
+  --ink: #141413; --ink2: #3d3d3a; --muted: #73726c; --faint: #9c9a92; --line: #e5e2d8; --hover: #f0eee6;
+  --accent: #d97757; --brand: #c96442; --brand-h: #ae5630; --brand-50: #faeee8; --brand-ink: #ae5630;
+  --primary: #141413; --primary-fg: #faf9f5;
+  --ok-bg: #dceddf; --ok-ink: #265e3c; --warn-bg: #f6eacc; --warn-ink: #855612; --bad-bg: #f7deda; --bad-ink: #8c2a22; --mute-bg: #f0eee6; --mute-ink: #3d3d3a;
+  --chart-main: #c96442; --chart-muted: #9c9a92; --chart-grid: #e5e2d8; --chart-axis: #73726c;
+  --shadow: 0 2px 12px rgba(0,0,0,.04); --menu-shadow: 0 8px 28px rgba(0,0,0,.12);
+  --serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+}
+/* Dark: warm charcoal with terracotta */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #262624; --side: #1f1e1d; --side-on: #141413; --card: #30302e; --bubble: #141413; --menu-hover: #3a3a37;
+  --ink: #faf9f5; --ink2: #c2c0b6; --muted: #9c9a92; --faint: #85837d; --line: #3e3e38; --hover: #1f1e1d;
+  --accent: #d97757; --brand: #d97757; --brand-h: #e89578; --brand-50: #3a2820; --brand-ink: #e89578;
+  --primary: #faf9f5; --primary-fg: #141413;
+  --ok-bg: #223628; --ok-ink: #86c89c; --warn-bg: #403218; --warn-ink: #e6be6e; --bad-bg: #482420; --bad-ink: #f09688; --mute-bg: #1f1e1d; --mute-ink: #c2c0b6;
+  --chart-main: #d97757; --chart-muted: #85837d; --chart-grid: #3e3e38; --chart-axis: #9c9a92;
+  --shadow: none; --menu-shadow: 0 8px 28px rgba(0,0,0,.45);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+input[type=checkbox] { accent-color: var(--brand); }
+.ic { display: block; flex-shrink: 0; }
+.grow { flex: 1; min-width: 0; }
+.rel { position: relative; }
+.serif { font-family: var(--serif); }
+.faint { color: var(--faint); } .accent { color: var(--brand); }
+.small { font-size: 12px; color: var(--muted); }
+.mono { font-family: Consolas, "Cascadia Mono", Menlo, monospace; font-size: 12.5px; }
+.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* shell */
+.app { display: flex; height: 100vh; }
+main { flex: 1; min-width: 0; overflow: hidden; position: relative; }
+.side { width: 288px; flex-shrink: 0; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.rail { width: 52px; flex-shrink: 0; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; }
+.side-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; }
+.wordmark { font-family: var(--serif); font-size: 19px; letter-spacing: -.2px; }
+.demo-tag { font-size: 10px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.icon-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--muted); transition: background .15s, color .15s; }
+.icon-btn:hover { background: var(--side-on); color: var(--ink); }
+main .icon-btn:hover { background: var(--hover); }
+.icon-btn.bordered { border: 1px solid var(--line); }
+.icon-btn.sm { width: 28px; height: 28px; }
+.icon-btn.on { background: var(--hover); color: var(--ink); }
+.icon-btn.on .fillable { fill: currentColor; }
+.new-dot { width: 32px; height: 32px; border-radius: 50%; background: var(--brand); color: #fff; display: inline-flex; align-items: center; justify-content: center; margin-top: 4px; }
+.new-dot.sm { width: 24px; height: 24px; margin: 0; }
+.newchat { display: flex; align-items: center; gap: 10px; margin: 0 8px; padding: 6px 8px; border-radius: 8px; color: var(--brand-ink); font-weight: 600; text-align: left; }
+.newchat:hover { background: var(--side-on); }
+.recents { flex: 1; overflow-y: auto; padding: 12px 8px 8px; scrollbar-width: thin; }
+.sec { font-size: 12px; color: var(--muted); padding: 0 8px 4px; font-weight: 500; }
+.chat-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 8px; color: var(--ink2); cursor: pointer; text-decoration: none; }
+.chat-item:hover, .chat-item.on { background: var(--side-on); }
+.chat-item.on { color: var(--ink); }
+.faint-txt { font-size: 13px; color: var(--faint); padding: 6px 8px; }
+.side-foot { border-top: 1px solid var(--line); padding: 8px; }
+.acct-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 8px; text-align: left; }
+.acct-btn.compact { width: auto; padding: 4px; }
+.acct-btn:hover { background: var(--side-on); }
+.acct-btn b { display: block; font-weight: 600; font-size: 13.5px; }
+.acct-btn small { display: block; font-size: 12px; color: var(--muted); text-transform: capitalize; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--ink2); color: var(--bg); font-weight: 600; flex-shrink: 0; }
+
+/* menus */
+.menu { position: absolute; z-index: 60; min-width: 208px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: var(--menu-shadow); font-size: 13.5px; }
+.menu.up { bottom: calc(100% + 8px); left: 0; }
+.menu.up-right { bottom: calc(100% + 8px); right: 0; }
+.menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px; color: var(--ink2); text-align: left; }
+.menu-item:hover { background: var(--menu-hover); }
+.menu-item .sub { display: block; font-size: 12px; color: var(--muted); }
+.menu-label { font-size: 12px; color: var(--muted); padding: 4px 10px 4px; }
+.sep { height: 1px; background: var(--line); margin: 4px 0; }
+.opt-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 10px; border-radius: 8px; color: var(--ink2); }
+.switch { width: 36px; height: 20px; border-radius: 999px; background: var(--faint); position: relative; transition: background .15s; flex-shrink: 0; }
+.switch span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .15s; }
+.switch.on { background: var(--brand); } .switch.on span { left: 18px; }
+.switch:disabled { opacity: .5; cursor: not-allowed; }
+
+/* chat */
+.greet-wrap { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 0 16px 12vh; }
+.greet { display: flex; align-items: center; gap: 12px; font-family: var(--serif); font-weight: 400; font-size: 40px; letter-spacing: -.5px; color: var(--ink2); margin: 0 0 32px; }
+.greet-composer { width: 100%; max-width: 672px; }
+.thread-wrap { height: 100%; display: flex; flex-direction: column; }
+.chat-head { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 16px; }
+.chat-title { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 8px; font-size: 14px; color: var(--ink2); max-width: 60%; }
+.chat-title:hover { background: var(--hover); }
+.msgs { flex: 1; overflow-y: auto; scrollbar-width: thin; }
+.col { max-width: 768px; margin: 0 auto; padding: 0 16px; }
+.msgs .col { padding-top: 12px; padding-bottom: 32px; }
+.composer-wrap { width: 100%; padding-bottom: 16px; flex-shrink: 0; }
+.m-user { display: flex; justify-content: flex-end; padding: 12px 0; }
+.m-user .bubble { max-width: 85%; background: var(--bubble); border-radius: 18px; padding: 10px 16px; font-size: 15px; line-height: 1.6; white-space: pre-wrap; }
+.m-bot { padding: 12px 0; }
+.answer { font-family: var(--serif); font-size: 16.5px; line-height: 1.7; white-space: pre-wrap; color: var(--ink); }
+.caret { display: inline-block; width: 8px; height: 16px; border-radius: 2px; background: var(--accent); vertical-align: middle; margin-left: 2px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.thinking { padding: 6px 0; color: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.refusal { display: flex; gap: 10px; border-radius: 12px; padding: 12px 16px; background: var(--warn-bg); color: var(--warn-ink); font-size: 14px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.actions .meta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: 8px; }
+.actions .mname { color: var(--ink2); }
+.badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 1px 6px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.b-local, .b-ok { background: var(--ok-bg); color: var(--ok-ink); } .b-cheap, .b-mute { background: var(--mute-bg); color: var(--mute-ink); }
+.b-strong, .b-brand { background: var(--brand-50); color: var(--brand-ink); } .b-bad { background: var(--bad-bg); color: var(--bad-ink); } .b-warn { background: var(--warn-bg); color: var(--warn-ink); }
+.pill { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 500; background: var(--mute-bg); color: var(--mute-ink); white-space: nowrap; }
+.pill.warn { background: var(--warn-bg); color: var(--warn-ink); } .pill.brand { background: var(--brand-50); color: var(--brand-ink); }
+.pill button { margin-right: -4px; padding: 2px; border-radius: 50%; color: inherit; } .pill button:hover { background: rgba(0,0,0,.08); }
+.why { margin-top: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 12.5px; color: var(--ink2); display: grid; grid-template-columns: 1fr 1.15fr; gap: 18px; }
+.why h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.kv { display: grid; grid-template-columns: 72px 1fr; gap: 5px 10px; }
+.kv b { color: var(--ink); font-weight: 600; }
+.funnel { list-style: none; margin: 0; padding: 0; }
+.funnel li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.dot { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.dot.y { background: var(--ok-bg); color: var(--ok-ink); } .dot.n { background: var(--mute-bg); color: var(--faint); } .dot.c { background: var(--brand); color: #fff; }
+.composer { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 12px 12px 10px; box-shadow: var(--shadow); }
+.composer:focus-within { border-color: var(--faint); }
+.composer textarea { display: block; width: 100%; border: 0; outline: 0; background: transparent; resize: none; font-size: 15px; line-height: 1.6; padding: 4px 6px; max-height: 240px; }
+.composer textarea::placeholder { color: var(--faint); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 4px 8px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; max-width: 260px; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--ink2); }
+.chip button { color: var(--faint); border-radius: 4px; padding: 2px; } .chip button:hover { color: var(--ink); background: var(--hover); }
+.c-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.model-btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; border-radius: 8px; color: var(--ink2); font-size: 13.5px; }
+.model-btn:hover { background: var(--hover); }
+.send { width: 32px; height: 32px; border-radius: 8px; background: var(--brand); color: #fff; display: inline-flex; align-items: center; justify-content: center; transition: background .15s, opacity .15s; }
+.send:hover { background: var(--brand-h); } .send:disabled { opacity: .4; cursor: default; }
+.attach { display: flex; justify-content: flex-end; align-items: flex-start; gap: 12px; padding: 12px 0; }
+.attach .file { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px; width: 300px; flex-shrink: 0; }
+.attach .file svg { display: block; width: 100%; height: auto; border-radius: 8px; }
+.attach .fname { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; padding: 0 2px; }
+.ocrbox { flex: 1; max-width: 420px; background: var(--card); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; color: var(--ink2); }
+.ocrbox pre { margin: 6px 0 0; white-space: pre-wrap; font: 11.5px/1.5 Consolas, "Cascadia Mono", Menlo, monospace; color: var(--ink); }
+.ocrbox mark { background: var(--brand-50); color: var(--brand-ink); border-radius: 3px; padding: 0 2px; }
+
+/* settings */
+.settings { height: 100%; overflow-y: auto; scrollbar-width: thin; }
+.s-inner { max-width: 1120px; margin: 0 auto; padding: 40px 32px 240px; }
+.s-title { font-family: var(--serif); font-weight: 400; font-size: 32px; letter-spacing: -.4px; margin: 0 0 28px; }
+.s-body { display: flex; gap: 32px; }
+.tabs { width: 168px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; }
+.tabs .tsec { font-size: 12px; color: var(--muted); padding: 18px 12px 4px; font-weight: 500; }
+.tabs a { display: block; padding: 6px 12px; border-radius: 8px; color: var(--ink2); text-decoration: none; cursor: pointer; }
+.tabs a:hover { background: var(--hover); }
+.tabs a.on { background: var(--hover); color: var(--ink); font-weight: 600; }
+.s-content { flex: 1; min-width: 0; }
+.h2 { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 18px; }
+.h2 h2 { font-size: 18px; font-weight: 600; margin: 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.card > header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 4px; font-weight: 600; font-size: 15px; }
+.card > .body { padding: 12px 20px 20px; }
+.card > table { margin-top: 8px; }
+.grid { display: grid; gap: 16px; } .grid > * { min-width: 0; }
+.g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); }
+.mt { margin-top: 20px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; padding: 8px 14px; font-weight: 500; font-size: 13.5px; background: var(--primary); color: var(--primary-fg); }
+.btn:hover { opacity: .88; }
+.btn.sec { background: var(--card); color: var(--ink); border: 1px solid var(--line); }
+.btn.sec:hover { background: var(--hover); opacity: 1; }
+.input, select { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--card); outline: none; }
+.input:focus, select:focus { border-color: var(--faint); }
+select:disabled, .input:disabled { opacity: .7; }
+label.fld { display: block; } label.fld > span { display: block; font-size: 13px; font-weight: 500; color: var(--ink2); margin-bottom: 6px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink2); }
+tr:last-child td { border-bottom: 0; }
+tr.new td { animation: flash 2.2s ease-out; }
+@keyframes flash { from { background: var(--brand-50); } to { background: transparent; } }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.set-row + .set-row { border-top: 1px solid var(--line); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: var(--card); padding: 7px 14px; font-size: 13px; color: var(--ink2); }
+.seg button.on { background: var(--primary); color: var(--primary-fg); font-weight: 500; }
+.seg button:disabled { cursor: not-allowed; }
+.notice { border-radius: 8px; padding: 10px 12px; font-size: 13px; background: var(--warn-bg); color: var(--warn-ink); }
+.stat { padding: 14px 16px; }
+.stat .k { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.stat .v { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.stat .n { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.chart { position: relative; } .chart svg { display: block; width: 100%; height: auto; }
+.legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink2); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12px; padding: 7px 9px; border-radius: 8px; white-space: nowrap; display: none; z-index: 5; }
+.linkbtn { color: var(--brand-ink); font-weight: 500; font-size: 13px; }
+pre.code { margin: 0; background: #1f1e1d; color: #e8e6dc; border: 1px solid #3e3e38; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font: 12.5px/1.55 Consolas, "Cascadia Mono", Menlo, monospace; }
+pre.code.wrap { white-space: pre-wrap; word-break: break-word; max-height: 400px; }
+pre.code .k { color: #e89578; } pre.code .s { color: #a8d5b5; }
+.mode-card { text-align: center; }
+.mode-card .sw { height: 64px; border-radius: 12px; border: 2px solid var(--line); display: flex; align-items: center; justify-content: center; }
+.mode-card.on .sw { outline: 2px solid var(--brand); outline-offset: 2px; }
+.mode-card .sw span { width: 28px; height: 28px; border-radius: 50%; background: #d97757; color: #fff; display: grid; place-items: center; }
+.mode-card div { margin-top: 8px; font-size: 13.5px; color: var(--ink2); }
+
+/* login */
+.login { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 24px 10vh; position: relative; }
+.login .brandline { display: flex; align-items: center; gap: 10px; margin-bottom: 36px; color: var(--ink); }
+.login .brandline span.wm { font-family: var(--serif); font-size: 30px; letter-spacing: -.4px; }
+.login h1 { font-family: var(--serif); font-weight: 400; font-size: 40px; letter-spacing: -.5px; margin: 0 0 28px; color: var(--ink2); }
+.acct { display: grid; grid-template-columns: repeat(3, 200px); gap: 14px; }
+.acct button { text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; gap: 12px; align-items: center; box-shadow: var(--shadow); }
+.acct button:hover { border-color: var(--faint); }
+.acct b { display: block; font-weight: 600; } .acct small { color: var(--muted); text-transform: capitalize; }
+.corner { position: absolute; top: 18px; right: 22px; display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; padding: 6px 10px; border-radius: 8px; }
+.corner:hover { background: var(--hover); color: var(--ink); }
+
+/* presenter steps panel */
+.tour { position: fixed; left: 12px; bottom: 74px; width: 264px; background: #1f1e1d; color: #c2c0b6; border: 1px solid #3e3e38; border-radius: 14px; box-shadow: 0 16px 36px rgba(0,0,0,.3); z-index: 50; }
+.tour.min .tbody { display: none; }
+.tour .thead { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid #3e3e38; font-size: 12px; }
+.tour .thead b { color: #faf9f5; font-weight: 600; }
+.tour .tbody { padding: 10px 12px 12px; }
+.tour h3 { margin: 0; font-family: var(--serif); font-weight: 400; font-size: 19px; color: #faf9f5; }
+.tour .prog { height: 3px; background: #3e3e38; border-radius: 3px; margin: 10px 0; overflow: hidden; }
+.tour .prog > div { height: 100%; background: #d97757; transition: width .3s; }
+.tour .ctl { display: flex; gap: 8px; justify-content: flex-end; }
+.tour .tb { border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 500; background: #d97757; color: #fff; }
+.tour .tb.sec { background: transparent; color: #c2c0b6; border: 1px solid #3e3e38; }
+.tour .tb:disabled { opacity: .5; cursor: default; }
+.tour .x { color: #9c9a92; font-size: 12px; }
+.spot { outline: 2px solid var(--accent) !important; outline-offset: 3px; border-radius: 10px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="tour" id="tour"></div>
+
+<script>
+"use strict";
+/* ============================================================== helpers */
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, S.fast ? 0 : ms));
+const usd = (v, d = 4) => "$" + v.toFixed(d);
+const pct = (v) => (v * 100).toFixed(1) + "%";
+const fmtMs = (v) => (v >= 1000 ? (v / 1000).toFixed(1) + " s" : Math.round(v) + " ms");
+let idc = 0; const nid = () => "id" + (++idc);
+const hexId = () => [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, "0")).join("");
+const now = () => new Date();
+const clock = (d) => d.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+async function sha(text) {
+  try { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join(""); }
+  catch { let h = 0; for (const c of text) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h.toString(16).padStart(8, "0").repeat(8); }
+}
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("sr-proto-theme", t); } catch {}
+  render();
+}
+const isDark = () => document.documentElement.dataset.theme === "dark";
+
+const ICONS = {
+  sidebar: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  chats: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/>',
+  up: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  sliders: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  chev: '<path d="m6 9 6 6 6-6"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+  close: '<path d="M18 6 6 18M6 6l12 12"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>',
+  star: '<path class="fillable" d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9Z"/>',
+};
+const ic = (n, s = 18, cls = "") => `<svg class="ic ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+const MARK = (s = 22, cls = "accent") => `<svg class="ic ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12c5 0 6-7 13-7"/><path d="M5 12h13"/><path d="M5 12c5 0 6 7 13 7"/></g><circle cx="4.5" cy="12" r="2.6" fill="currentColor"/><circle cx="19.5" cy="5" r="2" fill="currentColor"/><circle cx="19.5" cy="12" r="2" fill="currentColor"/><circle cx="19.5" cy="19" r="2" fill="currentColor"/></svg>`;
+const avatar = (name, size = 28) => `<span class="avatar" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.45)}px">${esc((name || "?")[0].toUpperCase())}</span>`;
+const pill = (label, tone = "", clear = "", id = "") => `<span class="pill ${tone}" ${id ? `id="${id}"` : ""}>${label}${clear ? `<button data-clear="${clear}" aria-label="Remove">${ic("close", 11)}</button>` : ""}</span>`;
+const sw = (key, on, disabled = false) => `<button class="switch ${on ? "on" : ""}" data-opt="${key}" role="switch" aria-checked="${on}" ${disabled ? "disabled" : ""}><span></span></button>`;
+
+/* ============================================================== state */
+const S = {
+  fast: false,
+  account: null,
+  accounts: {
+    user: { id: "u3", name: "Ayesha", email: "ayesha@university.example", role: "user", allow: null, budget: 5 },
+    admin: { id: "u2", name: "Lab Admin", email: "admin@smartroute.example", role: "admin", allow: null, budget: null },
+    superadmin: { id: "u1", name: "Super Admin", email: "superadmin@smartroute.example", role: "superadmin", allow: null, budget: null },
+  },
+  extraUsers: [
+    { id: "u4", name: "Bilal", email: "bilal@university.example", role: "user", allow: false, budget: 5 },
+    { id: "u5", name: "Hamza", email: "hamza@university.example", role: "user", allow: true, budget: 20 },
+  ],
+  policy: { cloud_enabled: true, allow_default: false, require_consent: true, exempt_names_public_docs: true, routing: "rules", history_budget: 2000, summary: true, budget: 100, retrieval_k: 5 },
+  changes: [],
+  models: [
+    { name: "local-default", display: "Llama 3.1 8B", vendor: "Ollama", tier: "local", local: true, pin: 0, pout: 0, ctx: 8192, maxout: 2048, lat: 3.1, enabled: true },
+    { name: "claude-haiku", display: "Claude Haiku 5.5", vendor: "Anthropic", tier: "cheap", local: false, pin: 0.10, pout: 0.50, ctx: 100000, maxout: 8192, lat: 1.9, enabled: true },
+    { name: "claude-opus", display: "Claude Opus 5.5", vendor: "Anthropic", tier: "strong", local: false, pin: 4.0, pout: 20.0, ctx: 1000000, maxout: 8192, lat: 6.2, enabled: true },
+  ],
+  sessions: {},
+  active: {},
+  docs: [
+    { id: "d1", name: "attention_is_all_you_need.pdf", label: "public", pages: 15, chunks: 38 },
+    { id: "d2", name: "exam_committee_minutes.pdf", label: "confidential", pages: 4, chunks: 9 },
+  ],
+  audit: [],
+  events: [],
+  apiOut: null,
+  openWhy: null,
+  flash: null,
+  collapsed: false,
+  menu: null,
+  draftMode: "cloud_allowed",
+  draftText: "",
+  composer: { confidential: false, consent: false, pinned: "", keep: true },
+};
+const CAPS = { explain: 400, doc_qa: 500, summary: 800, chat: 1024 };
+const TIER_BADGE = { local: "b-local", cheap: "b-cheap", strong: "b-strong" };
+const TIER = { local: "Local", cheap: "Fast", strong: "Strong" };
+const REASON = {
+  "privacy:confidential_not_permitted": "Not permitted",
+  "privacy:consent_required": "No consent",
+  "privacy:local_only_mode": "Local only",
+  "privacy:institutional_policy": "Cloud off",
+  context_window: "Too long",
+};
+const DECISION = {
+  not_confidential: "Clear",
+  confidential_permitted: "Permitted",
+  confidential_not_permitted: "Not permitted",
+  consent_required: "No consent",
+  local_only_mode: "Local only",
+  institutional_policy: "Cloud off",
+};
+const me = () => S.accounts[S.account];
+const allUsers = () => [S.accounts.superadmin, S.accounts.admin, S.accounts.user, ...S.extraUsers];
+const sessionsOf = () => (S.sessions[S.account] ||= []);
+const activeSession = () => sessionsOf().find((s) => s.id === S.active[S.account]);
+
+/* ============================================================== rules (same as the gateway) */
+const STOP = new Set("a an and are as at be by for from has have in is it its of on or that the this to was were will with".split(" "));
+const tokenize = (t) => (t.toLowerCase().match(/[a-z0-9]+/g) || []).filter((w) => !STOP.has(w));
+const countTokens = (t) => Math.ceil((t || "").length / 3.6);
+const countMessages = (ms) => ms.reduce((n, m) => n + countTokens(m.content) + 4, 0) + 2;
+const RX_SUMMARY = /\b(summar(?:y|ise|ize|ies)|tl;?dr|overview of|key points|main points|abstract of)\b/i;
+const RX_EXPLAIN = /\b(explain|define|definition|what (?:is|are|does)|meaning of|in simple terms|describe)\b/i;
+const RX_HARD = /\b(prove|derive|derivation|compare|contrast|analy[sz]e|evaluate|critique|justify|trade-?offs?|why does|why is|step by step|multi-?step|implications?|limitations?|robust|synthesi[sz]e)\b/gi;
+const RX_EASY = /\b(define|definition|what is|list|name|who|when|which year|how many)\b/gi;
+function explicitTask(p) { if (RX_SUMMARY.test(p)) return "summary"; if (RX_EXPLAIN.test(p)) return "explain"; return null; }
+function classifyTask(p, hasDoc) { if (RX_SUMMARY.test(p)) return "summary"; if (hasDoc) return "doc_qa"; if (RX_EXPLAIN.test(p)) return "explain"; return "chat"; }
+function complexity(p, inTok) {
+  const hard = (p.match(RX_HARD) || []).length, easy = (p.match(RX_EASY) || []).length;
+  let s = 0.25 + 0.12 * Math.min(hard, 3) - 0.10 * Math.min(easy, 2) + 0.08 * Math.max((p.match(/\?/g) || []).length - 1, 0);
+  s += 0.10 * Math.min(Math.log1p(p.split(/\s+/).length) / Math.log1p(120), 1);
+  s += 0.10 * Math.min(Math.log1p(inTok) / Math.log1p(8000), 1);
+  return Math.min(Math.max(s, 0), 1);
+}
+const GENERIC = new Set(("why how what which who whom whose when where more less example examples explain explained elaborate mean means meaning detail details detailed shorter simpler longer short simple long again else sure ok okay please thanks thank yes no does do did can could would should will give tell me show about so then also further continue go on make rewrite rephrase summarise summarize briefly simply instead other another one ones point points part parts").split(/\s+/));
+const RX_ANAPHORA = /\b(?:it|its|this|that|these|those|they|them|their|above|previous|earlier|same|former|latter|the (?:first|second|third|last|other) (?:one|method|approach|point|paper|model|result|step|part|option))\b/i;
+const RX_CONNECTOR = /^\s*(?:and|also|but|then|instead|what about|how about|what else|and what about)\b/i;
+const RX_FOLLOW = /^\s*(?:so|ok(?:ay)?|why|how so|in what way|more|elaborate|expand|continue|go on|tell me more|explain (?:that|this|it|them|more|further)|make it|rewrite|rephrase|shorten|simplify|shorter|simpler|longer|give (?:me )?(?:an? )?examples?|what does (?:that|this|it) mean)\b/i;
+function isFollowUp(q, pq, pa) {
+  if (!pq) return false;
+  const words = tokenize(q), seen = new Set([...tokenize(pq), ...tokenize(pa)]);
+  const novel = words.filter((w) => !GENERIC.has(w) && !seen.has(w));
+  if (!novel.length) return true;
+  if (RX_ANAPHORA.test(q) && words.length <= 10) return true;
+  if (RX_CONNECTOR.test(q) && novel.length <= 3) return true;
+  if (RX_FOLLOW.test(q) && novel.length <= 1) return true;
+  return false;
+}
+function luhn(d) { let t = 0, p = d.length % 2; for (let i = 0; i < d.length; i++) { let x = +d[i]; if (i % 2 === p) { x *= 2; if (x > 9) x -= 9; } t += x; } return t % 10 === 0; }
+function detect(text) {
+  const out = [];
+  const add = (type, re, check) => { for (const m of text.matchAll(re)) if (!check || check(m[0])) out.push({ type, start: m.index, end: m.index + m[0].length }); };
+  add("NATIONAL_ID", /(?<!\d)\d{5}-\d{7}-\d(?!\d)/g);
+  add("NATIONAL_ID", /(?<!\d)(?<!\d\.)[1-7]\d{12}(?!\d)(?!\.\d)/g);
+  add("PHONE", /(?<![\d+])(?:\+92|0092|0)[ -]?3\d{2}[ -]?\d{7}(?!\d)/g);
+  add("EMAIL", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g);
+  add("CREDIT_CARD", /(?<![\d-])(?:\d{4}[ -]?){3}\d{1,7}(?![\d-])/g, (s) => { const d = s.replace(/\D/g, ""); return d.length >= 13 && d.length <= 19 && "3456".includes(d[0]) && luhn(d); });
+  return out.sort((a, b) => a.start - b.start);
+}
+function mask(text, f) { let o = "", c = 0; for (const x of f) { if (x.start < c) continue; o += text.slice(c, x.start) + "[" + x.type + "]"; c = x.end; } return o + text.slice(c); }
+function permitted(user) { return user.allow === null ? S.policy.allow_default : user.allow; }
+function decideCloud(user, mode, sensitive, consent) {
+  if (!S.policy.cloud_enabled) return { allowed: false, reason: "institutional_policy" };
+  if (mode !== "cloud_allowed") return { allowed: false, reason: "local_only_mode" };
+  if (!sensitive) return { allowed: true, reason: "not_confidential" };
+  if (!permitted(user)) return { allowed: false, reason: "confidential_not_permitted" };
+  if (S.policy.require_consent && !consent) return { allowed: false, reason: "consent_required" };
+  return { allowed: true, reason: "confidential_permitted" };
+}
+const REFUSAL = {
+  institutional_policy: "Cloud is disabled.",
+  local_only_mode: "Local only.",
+  confidential_not_permitted: "Confidential content. Cloud not permitted for this account.",
+  consent_required: "Confidential content. Consent required.",
+};
+
+function plan({ user, session, text, consent, confidential, pinned, models = S.models, source = "chat" }) {
+  const history = session ? session.messages.filter((m) => m.role === "user" || (m.role === "assistant" && m.meta.status === "ok")).map((m) => ({ role: m.role, content: m.content })) : [];
+  let pq = "", pa = "";
+  for (let i = history.length - 1; i >= 0; i--) if (history[i].role === "user") { pq = history[i].content; pa = history.slice(i + 1).filter((m) => m.role === "assistant").map((m) => m.content).join(" "); break; }
+  const follow = isFollowUp(text, pq, pa);
+  const docs = session ? S.docs.filter((d) => session.docs.includes(d.id)) : [];
+  const hasDoc = docs.length > 0;
+  const task = explicitTask(text) || classifyTask(follow ? pq : text, hasDoc);
+  const histTok = countMessages(history);
+  const historyMode = !history.length ? "none" : histTok <= S.policy.history_budget ? "full" : (S.policy.summary ? "summary" : "relevant");
+  const cap = CAPS[task] || 1024;
+  const inTok = Math.round((countTokens(text) + Math.min(histTok, S.policy.history_budget) + (hasDoc ? S.policy.retrieval_k * 270 : 0) + 60) * 1.1);
+  const outTok = Math.round(cap / 2);
+  let cx = complexity(text, inTok);
+  if (follow) cx = Math.max(cx, complexity(pq, inTok));
+  const docText = docs.map((d) => d.text || "");
+  const scanned = [text, ...history.map((m) => m.content), ...docText].join("\n");
+  const findings = detect(text);
+  const otherFindings = detect([...history.map((m) => m.content), ...docText].join("\n"));
+  const triggers = [];
+  if (findings.length || otherFindings.length) triggers.push("pii_detected");
+  if (docs.some((d) => d.label === "confidential")) triggers.push("confidential_document");
+  if (confidential) triggers.push("explicit_label");
+  if (session && session.confidential) triggers.push("session_label");
+  const sensitive = triggers.length > 0;
+  const types = [...new Set([...findings, ...otherFindings].map((f) => f.type))].sort();
+  const mode = session ? session.mode : "cloud_allowed";
+  const perm = decideCloud(user, mode, sensitive, consent);
+  const routes = [], exclusions = {};
+  for (const m of models) {
+    if (!m.enabled) continue;
+    if (!m.local && !perm.allowed) { exclusions[m.name] = "privacy:" + perm.reason; continue; }
+    if (inTok + Math.min(cap, m.maxout) > m.ctx) { exclusions[m.name] = "context_window"; continue; }
+    routes.push({ ...m, est: (inTok * m.pin + outTok * m.pout) / 1e6 });
+  }
+  let decision = null, abstain = null, rule = "";
+  if (pinned) {
+    const r = routes.find((x) => x.name === pinned);
+    if (r) { decision = r; rule = "Chosen by user"; } else abstain = `${pinned} not eligible.`;
+  } else if (routes.length) {
+    let order, why;
+    if (task === "explain" && inTok < 300) { order = ["local", "cheap", "strong"]; why = "Short explanation"; }
+    else if (cx >= 0.6 || inTok > 6000) { order = ["strong", "cheap", "local"]; why = "Complex"; }
+    else if (task === "summary") { order = ["cheap", "local", "strong"]; why = "Summary"; }
+    else { order = ["cheap", "strong", "local"]; why = "Default"; }
+    for (const t of order) { const c = routes.filter((r) => r.tier === t).sort((a, b) => a.est - b.est)[0]; if (c) { decision = c; rule = `${why} → ${TIER[order[0]]}` + (t !== order[0] ? ` · fallback ${TIER[t]}` : ""); break; } }
+  } else {
+    abstain = !perm.allowed ? `${REFUSAL[perm.reason]} No local model available.` : "No eligible model.";
+  }
+  return { text, task, follow, historyMode, histCount: history.length, cx, inTok, outTok, sensitive, triggers, types, mode, perm, routes, exclusions, decision, abstain, rule, consent, source, models, preview: mask(text, findings).slice(0, 160), scanned };
+}
+
+/* prepared answers for the scripted questions */
+const CANNED = [
+  { re: /what is overfitting/i, text: "Overfitting is when a model learns the training data too closely, including its noise. It scores well on the data it has seen and poorly on new data. The usual remedies are more data, regularisation such as dropout or weight decay, and early stopping." },
+  { re: /compare dropout and weight decay/i, text: "Both reduce overfitting, but in different ways.\n\n• Dropout randomly disables units during training, so no unit can rely on another; it adds noise to training.\n• Weight decay penalises large weights, which keeps the learned function smooth; it adds no noise.\n\nFor a small CNN on limited data, weight decay is usually the more robust default: one parameter, stable training, and it acts on every layer. Dropout helps most in the fully connected head." },
+  { re: /^why\??$/i, text: "Because dropout's effect depends on the rate and on where it is placed, and in convolutional layers neighbouring activations are strongly correlated, so dropping single units removes little information. Weight decay acts evenly on every layer and needs no such tuning, which makes it the safer first choice." },
+  { re: /grade appeal/i, text: "Dear student,\n\nThank you for your appeal. The examination committee will review your grade and reply within five working days. You do not need to resend your identity details.\n\nRegards,\nCourse office" },
+  { re: /registrar/i, text: "Dear Registrar,\n\nI am writing on behalf of the student (CNIC 42101-1234567-1), who requests an official transcript for a scholarship application. Kindly issue it at your earliest convenience.\n\nRespectfully,\nAyesha Khan" },
+  { re: /admission form/i, text: "Admission form, filled from your attached card:\n\n• Name: Ayesha Demo\n• Father's name: Demo Khan\n• Gender: F\n• Identity number: 42101-1234567-1\n• Date of birth: 01.01.2003\n\nPlease check every field before you submit the form." },
+  { re: /trade-?offs between bm25/i, text: "BM25 is fast, needs no training and matches exact terms well, which suits scientific text full of specific names. Dense retrieval finds paraphrases and related wording but needs an embedding model and more compute. A common robust design ranks with BM25 first and re-ranks the top results with a dense model." },
+];
+function answerFor(p) {
+  const hit = CANNED.find((c) => c.re.test(p.text.trim()));
+  return hit ? hit.text : `Demo response (${p.decision.display}).`;
+}
+
+/* ============================================================== specimen CNIC (demo only) */
+// Generic, clearly marked specimen. It does not copy the official card's emblem,
+// branding or layout. Name and number are fictional demo values.
+const DEMO_CNIC = "42101-1234567-1";
+function cnicSvg(highlight = false) {
+  return `<svg viewBox="0 0 540 340" role="img" aria-label="Specimen identity card, not a real document">
+    <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f0eee6"/><stop offset="1" stop-color="#faf9f5"/></linearGradient></defs>
+    <rect x="2" y="2" width="536" height="336" rx="20" fill="url(#cg)" stroke="#9c9a92" stroke-width="2"/>
+    <text x="270" y="44" text-anchor="middle" font-size="19" font-weight="700" fill="#141413" font-family="Segoe UI, Arial">IDENTITY CARD · DEMO SPECIMEN</text>
+    <text x="270" y="64" text-anchor="middle" font-size="11.5" font-weight="700" fill="#b91c1c" font-family="Segoe UI, Arial">NOT A REAL DOCUMENT · MADE FOR THE SMARTROUTE PROTOTYPE</text>
+    <rect x="28" y="86" width="122" height="152" rx="10" fill="#e5e2d8"/>
+    <circle cx="89" cy="140" r="30" fill="#9c9a92"/><path d="M41 232 C46 190 132 190 137 232 Z" fill="#9c9a92"/>
+    ${highlight ? `<rect x="170" y="196" width="226" height="36" rx="6" fill="#f5ded3"/>` : ""}
+    <g font-family="Segoe UI, Arial" fill="#141413">
+      <text x="178" y="100" font-size="11" fill="#73726c">Name</text><text x="178" y="119" font-size="17" font-weight="600">Ayesha Demo</text>
+      <text x="178" y="143" font-size="11" fill="#73726c">Father Name</text><text x="178" y="162" font-size="16">Demo Khan</text>
+      <text x="370" y="143" font-size="11" fill="#73726c">Gender</text><text x="370" y="162" font-size="16">F</text>
+      <text x="420" y="143" font-size="11" fill="#73726c">Country of Stay</text><text x="420" y="162" font-size="16">Pakistan</text>
+      <text x="178" y="190" font-size="11" fill="#73726c">Identity Number</text><text x="178" y="222" font-size="22" font-weight="700" letter-spacing="1">${DEMO_CNIC}</text>
+      <text x="28" y="268" font-size="11" fill="#73726c">Date of Birth</text><text x="28" y="287" font-size="15">01.01.2003</text>
+      <text x="178" y="268" font-size="11" fill="#73726c">Date of Issue</text><text x="178" y="287" font-size="15">15.03.2021</text>
+      <text x="320" y="268" font-size="11" fill="#73726c">Date of Expiry</text><text x="320" y="287" font-size="15">15.03.2031</text>
+    </g>
+    <path d="M420 222 c10 -18 22 6 30 -6 s14 -16 24 2 s16 -6 26 -4" fill="none" stroke="#141413" stroke-width="2"/>
+    <text x="420" y="240" font-size="10" fill="#73726c" font-family="Segoe UI, Arial">Holder's signature</text>
+    <text x="270" y="210" text-anchor="middle" font-size="86" font-weight="800" fill="#b91c1c" opacity="0.13" transform="rotate(-18 270 190)" font-family="Segoe UI, Arial">SPECIMEN</text>
+    <text x="270" y="324" text-anchor="middle" font-size="10.5" fill="#73726c" font-family="Segoe UI, Arial">Fictional demo data · do not use as identification</text>
+  </svg>`;
+}
+const OCR_TEXT = `IDENTITY CARD · DEMO SPECIMEN
+NOT A REAL DOCUMENT · MADE FOR THE SMARTROUTE PROTOTYPE
+Name: Ayesha Demo
+Father Name: Demo Khan
+Gender: F    Country of Stay: Pakistan
+Identity Number: ${DEMO_CNIC}
+Date of Birth: 01.01.2003
+Date of Issue: 15.03.2021    Date of Expiry: 15.03.2031`;
+
+/* ============================================================== actions */
+function newSession(title = "New chat") {
+  const s = { id: nid(), title, mode: S.draftMode, confidential: false, docs: [], messages: [] };
+  sessionsOf().unshift(s); S.active[S.account] = s.id; return s;
+}
+function startNewChat() {
+  S.active[S.account] = null;
+  S.draftMode = "cloud_allowed";
+  S.draftText = "";
+  S.composer = { confidential: false, consent: false, pinned: "", keep: true };
+  S.openWhy = null; S.menu = null;
+  screen = "chat";
+}
+async function attachPhoto() {
+  const s = activeSession() || newSession("Admission form");
+  const doc = { id: nid(), name: "cnic_photo.png", label: "confidential", pages: 1, chunks: 1, ocr: true, text: OCR_TEXT };
+  S.docs.unshift(doc);
+  s.docs = [...s.docs.filter((id) => id !== doc.id), doc.id];
+  const att = { id: nid(), role: "attachment", doc, meta: { status: "reading" } };
+  s.messages.push(att);
+  render();
+  await sleep(1400);
+  att.meta.status = "done";
+  render();
+  return att;
+}
+async function send(text, { consent = false, confidential = false, pinned = "" } = {}) {
+  const s = activeSession() || newSession();
+  if (!s.messages.some((m) => m.role === "user") && s.title === "New chat") s.title = text.slice(0, 48);
+  const p = plan({ user: me(), session: s, text, consent, confidential, pinned });
+  s.messages.push({ id: nid(), role: "user", content: text, meta: {} });
+  if (p.sensitive) s.confidential = true;
+  const bot = { id: nid(), role: "assistant", content: "", meta: { status: "streaming" }, plan: p };
+  s.messages.push(bot);
+  S.draftText = "";
+  S.composer.consent = false; S.composer.confidential = false;
+  render();
+  const lat = p.decision ? Math.round(p.decision.lat * 1000 * (1 + p.inTok / 20000) * (0.9 + Math.random() * 0.2)) : 0;
+  const cost = p.decision ? (p.inTok * p.decision.pin + p.outTok * 0.8 * p.decision.pout) / 1e6 : 0;
+  if (p.sensitive) await addAudit(p, me());
+  if (p.abstain) {
+    bot.content = p.abstain; bot.meta = { status: "abstained" };
+  } else {
+    await sleep(450);
+    const full = answerFor(p), words = full.split(/(\s+)/);
+    for (let i = 0; i < words.length; i += 2) { bot.content += words[i] + (words[i + 1] || ""); if (i % 6 === 0) { renderThread(); await sleep(28); } }
+    bot.content = full;
+    bot.meta = { status: "ok", model: p.decision.name, latency: lat, cost, outTok: Math.round(p.outTok * 0.8) };
+  }
+  S.events.push({ t: now(), model: p.decision && !p.abstain ? p.decision.name : null, cost, inTok: p.inTok, outTok: Math.round(p.outTok * 0.8), sensitive: p.sensitive, status: bot.meta.status });
+  render();
+  return bot;
+}
+async function addAudit(p, user) {
+  S.audit.unshift({
+    id: nid(), t: now(), user: user.email, source: p.source, triggers: p.triggers, types: p.types,
+    decision: p.perm.allowed ? "cloud_allowed" : "cloud_blocked", reason: p.perm.reason, consent: p.consent,
+    dest: p.decision ? p.decision.name : null, left: !!(p.decision && !p.decision.local),
+    preview: p.preview || "–", hash: (await sha(p.scanned)).slice(0, 12), fresh: true,
+  });
+}
+function logChange(target, field, before, after) { S.changes.unshift({ t: now(), actor: me().email, target, field, before, after, fresh: true }); }
+
+/* ============================================================== shell */
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "files", label: "Files" },
+  { id: "api", label: "API" },
+  { id: "analytics", label: "Analytics" },
+  { id: "users", label: "Users", roles: ["superadmin", "admin"], sec: "Admin" },
+  { id: "audit", label: "Audit", roles: ["superadmin", "admin"] },
+  { id: "policy", label: "Policy", roles: ["superadmin", "admin"] },
+  { id: "models", label: "Models", roles: ["superadmin"] },
+];
+let screen = "login";
+const tabsFor = () => TABS.filter((t) => !t.roles || t.roles.includes(me().role));
+function go(id) { screen = id; S.menu = null; if (location.hash !== "#" + id) history.replaceState(null, "", location.search + "#" + id); render(); }
+
+function render() {
+  const root = $("#root");
+  if (!S.account || screen === "login") { root.innerHTML = loginView(); bindLogin(); return; }
+  if (screen !== "chat" && !tabsFor().find((t) => t.id === screen)) screen = "chat";
+  root.innerHTML = `<div class="app">${sidebarHtml()}<main id="main">${screen === "chat" ? chatView() : settingsView()}</main></div>`;
+  bindShell();
+  if (screen === "chat") bindChat(); else (BIND[screen] || (() => {}))();
+}
+
+function sidebarHtml() {
+  const cur = screen === "chat" ? S.active[S.account] : null;
+  const acct = (compact) => `<div class="rel" data-menu-root>${S.menu === "acct" ? acctMenu() : ""}<button class="acct-btn ${compact ? "compact" : ""}" data-menu="acct" title="${esc(me().name)}">${avatar(me().name)}${compact ? "" : `<span class="grow"><b class="t">${esc(me().name)}</b><small>${me().role}</small></span>`}</button></div>`;
+  if (S.collapsed) {
+    return `<aside class="rail">
+      <button class="icon-btn" data-act="toggle" title="Open sidebar">${ic("sidebar")}</button>
+      <button class="new-dot" data-act="new" title="New chat">${ic("plus", 16)}</button>
+      <button class="icon-btn" data-act="toggle" title="Chats">${ic("chats")}</button>
+      <div style="margin-top:auto">${acct(true)}</div></aside>`;
+  }
+  const list = sessionsOf();
+  return `<aside class="side">
+    <div class="side-head"><button class="icon-btn" data-act="toggle" title="Close sidebar">${ic("sidebar")}</button><span class="wordmark">SmartRoute</span><span class="demo-tag">Demo</span></div>
+    <button class="newchat" data-act="new"><span class="new-dot sm">${ic("plus", 14)}</span>New chat</button>
+    <div class="recents"><div class="sec">Recents</div>
+      ${list.map((s) => `<a class="chat-item ${s.id === cur ? "on" : ""}" data-s="${s.id}" title="${esc(s.title)}"><span class="t grow">${esc(s.title)}</span>${s.confidential ? ic("lock", 12, "faint") : ""}</a>`).join("") || '<div class="faint-txt">No chats yet</div>'}
+    </div>
+    <div class="side-foot">${acct(false)}</div></aside>`;
+}
+function acctMenu() {
+  const themeItem = (t, label, icon) => `<button class="menu-item" data-theme-set="${t}">${ic(icon, 15)}<span class="grow">${label}</span>${(isDark() ? "dark" : "light") === t ? ic("check", 15, "accent") : ""}</button>`;
+  return `<div class="menu up" style="width:248px">
+    <div class="menu-label t">${esc(me().email)}</div>
+    <button class="menu-item" data-go="general">${ic("gear", 15)}Settings</button>
+    <div class="sep"></div><div class="menu-label">Switch account</div>
+    ${Object.entries(S.accounts).map(([k, a]) => `<button class="menu-item" data-switch="${k}">${avatar(a.name, 20)}<span class="grow">${esc(a.name)}</span>${k === S.account ? ic("check", 15, "accent") : ""}</button>`).join("")}
+    <div class="sep"></div>${themeItem("light", "Light", "sun")}${themeItem("dark", "Dark", "moon")}
+    <div class="sep"></div><button class="menu-item" data-act="signout">${ic("logout", 15)}Sign out</button></div>`;
+}
+function bindShell() {
+  $$("[data-act=toggle]").forEach((b) => b.addEventListener("click", () => { S.collapsed = !S.collapsed; render(); }));
+  $$("[data-act=new]").forEach((b) => b.addEventListener("click", () => { startNewChat(); go("chat"); }));
+  $$("[data-s]").forEach((el) => el.addEventListener("click", () => { S.active[S.account] = el.dataset.s; S.openWhy = null; go("chat"); }));
+  $$("[data-menu]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); S.menu = S.menu === b.dataset.menu ? null : b.dataset.menu; render(); }));
+  $$("[data-go]").forEach((b) => b.addEventListener("click", () => go(b.dataset.go)));
+  $$("[data-switch]").forEach((b) => b.addEventListener("click", () => { S.account = b.dataset.switch; S.flash = null; S.menu = null; render(); }));
+  $$("[data-theme-set]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.themeSet)));
+  $$("[data-act=signout]").forEach((b) => b.addEventListener("click", () => { S.menu = null; go("login"); }));
+}
+document.addEventListener("mousedown", (e) => {
+  if (S.menu && !e.target.closest("[data-menu-root]") && !e.target.closest("#tour")) { S.menu = null; render(); }
+});
+
+/* -------------------------------------------------------------- login */
+function loginView() {
+  const card = (k) => { const a = S.accounts[k]; return `<button data-acct="${k}">${avatar(a.name, 34)}<span><b>${esc(a.name)}</b><small>${a.role}</small></span></button>`; };
+  return `<div class="login"><button class="corner" data-theme-set="${isDark() ? "light" : "dark"}">${ic(isDark() ? "sun" : "moon", 15)}${isDark() ? "Light" : "Dark"}</button>
+    <div class="brandline">${MARK(30)}<span class="wm">SmartRoute</span><span class="demo-tag">Demo</span></div>
+    <h1>Welcome back</h1>
+    <div class="acct">${card("user")}${card("admin")}${card("superadmin")}</div></div>`;
+}
+function bindLogin() {
+  $$("[data-acct]").forEach((b) => b.addEventListener("click", () => { S.account = b.dataset.acct; startNewChat(); go("chat"); }));
+  $$("[data-theme-set]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.themeSet)));
+}
+
+/* -------------------------------------------------------------- chat */
+function greeting() { const h = new Date().getHours(); return h < 5 || h >= 17 ? "Good evening" : h < 12 ? "Good morning" : "Good afternoon"; }
+function chatView() {
+  const s = activeSession();
+  if (!s || !s.messages.length) {
+    return `<div class="greet-wrap"><h1 class="greet">${MARK(34)}${greeting()}, ${esc(me().name.split(" ")[0])}</h1><div class="greet-composer">${composerHtml(s)}</div></div>`;
+  }
+  return `<div class="thread-wrap">
+    <header class="chat-head"><span class="chat-title"><span class="t">${esc(s.title)}</span>${ic("chev", 15, "faint")}</span><span class="grow"></span>
+      ${s.mode === "local_only" ? pill("Local only") : ""}${s.confidential ? pill(ic("lock", 12) + " Confidential", "warn") : ""}</header>
+    <div class="msgs" id="msgs"><div class="col" id="thread">${threadHtml(s)}</div></div>
+    <div class="col composer-wrap">${composerHtml(s)}</div></div>`;
+}
+function composerHtml(s) {
+  const C = S.composer;
+  const mode = s ? s.mode : S.draftMode;
+  const cloudOff = !S.policy.cloud_enabled;
+  const localOnly = mode === "local_only" || cloudOff;
+  const canConsent = permitted(me()) && !localOnly;
+  const docs = s ? s.docs.map((id) => S.docs.find((d) => d.id === id)).filter(Boolean) : [];
+  const pinned = S.models.find((m) => m.name === C.pinned);
+  const hasThread = s && s.messages.length;
+  const plusMenu = `<div class="menu up" style="width:288px">
+      <button class="menu-item" data-act="upload">${ic("upload", 15)}Upload file</button>
+      <button class="menu-item" id="photoItem" data-act="photo">${ic("image", 15)}CNIC photo</button>
+      <div class="sep"></div><div class="menu-label">Files</div>
+      ${S.docs.map((d) => `<button class="menu-item" data-toggle-doc="${d.id}">${ic("file", 15, "faint")}<span class="grow t">${esc(d.name)}</span>${d.label === "confidential" ? ic("lock", 12, "faint") : ""}<span style="width:16px">${s && s.docs.includes(d.id) ? ic("check", 15, "accent") : ""}</span></button>`).join("")}
+      <input type="file" id="fileIn" hidden></div>`;
+  const optMenu = `<div class="menu up" style="width:256px">
+      <div class="opt-row"><span>Local only</span>${sw("local", localOnly, cloudOff)}</div>
+      <div class="opt-row"><span>Confidential</span>${sw("conf", C.confidential)}</div>
+      ${canConsent ? `<div class="opt-row"><span>Consent</span>${sw("consent", C.consent)}</div>` : ""}
+      <div class="sep"></div><div class="opt-row"><span>Keep history</span>${sw("keep", C.keep)}</div></div>`;
+  const modelMenu = `<div class="menu up-right" style="width:256px">
+      <button class="menu-item" data-pin=""><span class="grow"><span>Auto</span><span class="sub">Best route per message</span></span>${!C.pinned ? ic("check", 15, "accent") : ""}</button>
+      <div class="sep"></div>
+      ${S.models.filter((m) => m.enabled).map((m) => `<button class="menu-item" data-pin="${m.name}"><span class="grow"><span>${esc(m.display)}</span><span class="sub">${TIER[m.tier]} · ${m.local ? "Local" : "Cloud"}</span></span>${C.pinned === m.name ? ic("check", 15, "accent") : ""}</button>`).join("")}</div>`;
+  return `<div class="composer">
+    ${docs.length ? `<div class="chips">${docs.map((d) => `<span class="chip">${ic("file", 14, "faint")}<span class="t">${esc(d.name)}</span>${d.ocr ? '<span class="faint">OCR</span>' : ""}<button data-detach="${d.id}" aria-label="Remove">${ic("close", 12)}</button></span>`).join("")}</div>` : ""}
+    <textarea id="box" rows="1" placeholder="${hasThread ? "Reply" : "Message"}">${esc(S.draftText)}</textarea>
+    <div class="c-row">
+      <div class="rel" data-menu-root>${S.menu === "plus" ? plusMenu : ""}<button class="icon-btn bordered" id="plusBtn" data-menu="plus" title="Add files">${ic("plus", 17)}</button></div>
+      <div class="rel" data-menu-root>${S.menu === "opt" ? optMenu : ""}<button class="icon-btn bordered" id="optBtn" data-menu="opt" title="Options">${ic("sliders", 17)}</button></div>
+      <div class="pills">
+        ${localOnly ? pill(cloudOff ? "Cloud off" : "Local only", "", cloudOff ? "" : "local", "localPill") : ""}
+        ${C.confidential ? pill("Confidential", "warn", "conf") : ""}
+        ${C.consent && canConsent ? pill("Consent", "brand", "consent", "consentPill") : ""}
+      </div>
+      <span class="grow"></span>
+      <div class="rel" data-menu-root>${S.menu === "model" ? modelMenu : ""}<button class="model-btn" data-menu="model">${pinned ? esc(pinned.display) : "Auto"}${ic("chev", 14, "faint")}</button></div>
+      <button class="send" id="sendBtn" title="Send" ${S.draftText.trim() && !busy ? "" : "disabled"}>${ic("up", 17)}</button>
+    </div></div>`;
+}
+function threadHtml(s) {
+  return s.messages.map((m) => (m.role === "user" ? `<div class="m-user"><div class="bubble">${esc(m.content)}</div></div>` : m.role === "attachment" ? attachHtml(m) : botHtml(m))).join("");
+}
+function attachHtml(m) {
+  const done = m.meta.status === "done";
+  const ocr = done
+    ? `<div class="ocrbox"><b>OCR</b> <span class="small">· baidu/Unlimited-OCR · on server</span>
+        <pre>${esc(OCR_TEXT).replace(DEMO_CNIC, `<mark>${DEMO_CNIC}</mark>`)}</pre>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><span class="badge b-warn">NATIONAL_ID</span><span class="badge b-warn">Confidential</span><span class="badge b-ok">Metadata removed</span></div></div>`
+    : `<div class="ocrbox"><span class="thinking" style="display:inline-flex;gap:8px;align-items:center">${MARK(18)}Reading</span></div>`;
+  return `<div class="attach">${ocr}<div class="file">${cnicSvg(done)}<div class="fname"><span>${esc(m.doc.name)}</span><span>${done ? "OCR" : "Reading"}</span></div></div></div>`;
+}
+function botHtml(m) {
+  const p = m.plan, st = m.meta.status, model = p.decision, refused = st === "abstained";
+  if (st === "streaming" && !m.content) return `<div class="m-bot"><div class="thinking">${MARK(24)}</div></div>`;
+  const body = refused
+    ? `<div class="refusal">${ic("lock", 16)}<span>${esc(m.content)}</span></div>`
+    : `<div class="answer">${esc(m.content)}${st === "streaming" ? '<span class="caret"></span>' : ""}</div>`;
+  let actions = "";
+  if (st !== "streaming") {
+    const ok = !refused;
+    actions = `<div class="actions">
+      ${ok ? `<button class="icon-btn sm" data-copy="${m.id}" title="Copy">${ic(m.copied ? "check" : "copy", 15)}</button><button class="icon-btn sm ${m.rated ? "on" : ""}" data-rate="${m.id}" title="Rate">${ic("star", 15)}</button>` : ""}
+      <button class="icon-btn sm ${S.openWhy === m.id ? "on" : ""}" data-why="${m.id}" title="Details">${ic("info", 15)}</button>
+      <span class="meta">${model && ok ? `<span class="mname">${esc(model.display)}</span><span>· ${model.local ? "Local" : "Cloud"}</span>` : ""}
+        ${p.sensitive ? `<span class="badge b-warn">${p.types.length ? p.types.join(", ") : "Confidential"}</span>` : ""}
+        ${p.follow ? '<span class="badge b-mute">Follow-up</span>' : ""}</span></div>`;
+  }
+  return `<div class="m-bot">${body}${actions}${S.openWhy === m.id ? whyHtml(p, m) : ""}</div>`;
+}
+function whyHtml(p, m) {
+  const funnel = p.models.map((md) => {
+    const chosen = p.decision && p.decision.name === md.name && !p.abstain;
+    const why = !md.enabled ? "Off" : p.exclusions[md.name] ? REASON[p.exclusions[md.name]] || p.exclusions[md.name] : chosen ? "Chosen" : "Eligible";
+    const cls = chosen ? "c" : p.exclusions[md.name] || !md.enabled ? "n" : "y";
+    return `<li><span class="dot ${cls}">${cls === "n" ? "×" : "✓"}</span><span><b>${esc(md.display)}</b> <span class="small">${TIER[md.tier]} · ${esc(why)}</span></span></li>`;
+  }).join("");
+  const context = p.histCount ? `${p.follow ? "Follow-up · " : ""}${({ full: "Full", summary: "Summary", relevant: "Relevant" })[p.historyMode] || "–"} · ${p.histCount}` : "First message";
+  const usage = m.meta.status === "ok" ? `${fmtMs(m.meta.latency)} · ${usd(m.meta.cost, 5)} · ${p.inTok} in / ${m.meta.outTok} out` : "–";
+  return `<div class="why">
+    <div><h4>Eligibility</h4><ul class="funnel">${funnel}</ul></div>
+    <div class="kv">
+      <b>Decision</b><span>${p.abstain ? esc(p.abstain) : `${S.policy.routing === "rules" ? "Rules" : S.policy.routing} · ${esc(p.rule)}`}</span>
+      <b>Task</b><span>${p.task.replace("_", " ")} · difficulty ${p.cx.toFixed(2)}</span>
+      <b>Usage</b><span>${usage}</span>
+      <b>Privacy</b><span>${p.sensitive ? `${p.types.join(", ") || "Confidential"} · ${DECISION[p.perm.reason]}` : DECISION[p.perm.reason]}${p.mode === "local_only" && p.perm.reason !== "local_only_mode" ? " · Local only" : ""}</span>
+      <b>Context</b><span>${context}</span>
+    </div></div>`;
+}
+function scrollThread() { const el = $("#msgs"); if (el) el.scrollTop = el.scrollHeight; }
+function renderThread() { const el = $("#thread"), s = activeSession(); if (!el || !s) return render(); el.innerHTML = threadHtml(s); bindThread(); scrollThread(); }
+function bindThread() {
+  $$("[data-why]").forEach((a) => a.addEventListener("click", () => { S.openWhy = S.openWhy === a.dataset.why ? null : a.dataset.why; renderThread(); }));
+  $$("[data-rate]").forEach((a) => a.addEventListener("click", () => { const m = activeSession().messages.find((x) => x.id === a.dataset.rate); m.rated = !m.rated; renderThread(); }));
+  $$("[data-copy]").forEach((a) => a.addEventListener("click", async () => {
+    const m = activeSession().messages.find((x) => x.id === a.dataset.copy);
+    try { await navigator.clipboard.writeText(m.content); } catch {}
+    m.copied = true; renderThread(); setTimeout(() => { m.copied = false; renderThread(); }, 1400);
+  }));
+}
+let busy = false;
+function setMode(local) {
+  const s = activeSession();
+  if (s) s.mode = local ? "local_only" : "cloud_allowed"; else S.draftMode = local ? "local_only" : "cloud_allowed";
+}
+function bindChat() {
+  const box = $("#box"), sendBtn = $("#sendBtn");
+  const fit = () => { box.style.height = "auto"; box.style.height = Math.min(box.scrollHeight, 240) + "px"; };
+  fit();
+  box.addEventListener("input", () => { S.draftText = box.value; sendBtn.disabled = !box.value.trim() || busy; fit(); });
+  const submit = () => {
+    const t = S.draftText.trim(); if (!t || busy) return;
+    const s = activeSession(), localOnly = (s ? s.mode : S.draftMode) === "local_only" || !S.policy.cloud_enabled;
+    busy = true;
+    send(t, { consent: S.composer.consent && permitted(me()) && !localOnly, confidential: S.composer.confidential, pinned: S.composer.pinned }).finally(() => { busy = false; render(); });
+  };
+  sendBtn.addEventListener("click", submit);
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
+  $$("[data-opt]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.opt, C = S.composer;
+    if (k === "local") setMode(!(b.getAttribute("aria-checked") === "true"));
+    if (k === "conf") C.confidential = !C.confidential;
+    if (k === "consent") C.consent = !C.consent;
+    if (k === "keep") C.keep = !C.keep;
+    render();
+  }));
+  $$("[data-clear]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.clear;
+    if (k === "local") setMode(false); if (k === "conf") S.composer.confidential = false; if (k === "consent") S.composer.consent = false;
+    render();
+  }));
+  $$("[data-pin]").forEach((b) => b.addEventListener("click", () => { S.composer.pinned = b.dataset.pin; S.menu = null; render(); }));
+  $$("[data-detach]").forEach((b) => b.addEventListener("click", () => { const s = activeSession(); s.docs = s.docs.filter((id) => id !== b.dataset.detach); render(); }));
+  $$("[data-toggle-doc]").forEach((b) => b.addEventListener("click", () => {
+    const s = activeSession() || newSession(), id = b.dataset.toggleDoc;
+    s.docs = s.docs.includes(id) ? s.docs.filter((x) => x !== id) : [...s.docs, id]; render();
+  }));
+  const act = (name, fn) => { const b = $(`[data-act=${name}]`); if (b) b.addEventListener("click", fn); };
+  act("photo", () => { if (busy) return; S.menu = null; busy = true; attachPhoto().finally(() => { busy = false; render(); }); });
+  act("upload", () => $("#fileIn").click());
+  const fileIn = $("#fileIn");
+  if (fileIn) fileIn.addEventListener("change", () => {
+    const f = fileIn.files[0]; if (!f) return;
+    const image = /\.(png|jpe?g|webp|tiff?|bmp)$/i.test(f.name);
+    const doc = { id: nid(), name: f.name, label: "confidential", pages: image ? 1 : 6, chunks: image ? 1 : 14, ocr: image };
+    S.docs.unshift(doc);
+    const s = activeSession() || newSession(); s.docs.push(doc.id); S.menu = null; render();
+  });
+  bindThread();
+  scrollThread();
+}
+
+/* -------------------------------------------------------------- settings */
+function settingsView() {
+  let sec = "";
+  const tabs = tabsFor().map((t) => `${t.sec ? `<div class="tsec">${t.sec}</div>` : ""}<a data-go="${t.id}" class="${screen === t.id ? "on" : ""}">${t.label}</a>`).join("");
+  void sec;
+  return `<div class="settings"><div class="s-inner"><h1 class="s-title">Settings</h1>
+    <div class="s-body"><nav class="tabs">${tabs}</nav><div class="s-content">${VIEWS[screen]()}</div></div></div></div>`;
+}
+const h2 = (title, right = "") => `<div class="h2"><h2>${title}</h2>${right}</div>`;
+
+function generalView() {
+  const u = me(), dark = isDark();
+  const rows = [
+    ["Role", u.role],
+    ["Cloud models", S.policy.cloud_enabled ? "On" : "Off"],
+    ["Confidential to cloud", permitted(u) ? "Allowed" : "Not allowed"],
+    ["Consent per message", S.policy.require_consent ? "Required" : "Not required"],
+    ["Monthly budget", u.budget == null ? "None" : "$" + u.budget],
+  ];
+  return `${h2("General")}
+  <div class="card"><header>Profile</header><div class="body" style="display:flex;gap:16px;align-items:center">${avatar(u.name, 44)}
+    <div class="grid g2 grow"><label class="fld"><span>Name</span><input class="input" value="${esc(u.name)}" disabled></label><label class="fld"><span>Email</span><input class="input" value="${esc(u.email)}" disabled></label></div></div></div>
+  <div class="card mt"><header>Appearance</header><div class="body"><div class="grid" style="grid-template-columns:repeat(2,150px)">
+    <button class="mode-card ${!dark ? "on" : ""}" data-theme-set="light"><div class="sw" style="background:#faf9f5;border-color:#e5e2d8;margin:0"><span>${ic("sun", 15)}</span></div><div>Light</div></button>
+    <button class="mode-card ${dark ? "on" : ""}" data-theme-set="dark"><div class="sw" style="background:#262624;border-color:#3e3e38;margin:0"><span>${ic("moon", 15)}</span></div><div>Dark</div></button>
+  </div></div></div>
+  <div class="card mt"><header>Access</header><div class="body">${rows.map(([k, v]) => `<div class="set-row"><span class="small" style="font-size:13.5px">${k}</span><b style="font-weight:600;text-transform:capitalize">${v}</b></div>`).join("")}</div></div>`;
+}
+
+function filesView() {
+  return `${h2("Files")}
+  <div class="card"><header>Upload</header><div class="body grid" style="grid-template-columns:1fr 180px auto;align-items:end">
+    <label class="fld"><span>File</span><input class="input" type="file" accept=".pdf,.txt,.png,.jpg,.jpeg,.webp,.tif,.tiff,.bmp" id="file"></label>
+    <label class="fld"><span>Label</span><select id="lbl"><option value="confidential">Confidential</option><option value="public">Public</option></select></label>
+    <button class="btn" id="up">Upload</button></div></div>
+  <div class="card mt"><header>Library</header><table><tr><th>File</th><th>Label</th><th>Pages</th><th>Source</th><th></th></tr>
+    ${S.docs.map((d) => `<tr><td><b style="color:var(--ink);font-weight:500">${esc(d.name)}</b></td><td><span class="badge ${d.label === "public" ? "b-ok" : "b-warn"}">${d.label === "public" ? "Public" : "Confidential"}</span></td><td>${d.pages}</td><td>${d.ocr ? '<span class="badge b-brand">OCR</span>' : "Text"}</td><td style="text-align:right"><button class="btn sec" data-del="${d.id}">Delete</button></td></tr>`).join("")}
+  </table></div>`;
+}
+function bindFiles() {
+  $("#up").addEventListener("click", () => {
+    const f = $("#file").files[0]; const name = f ? f.name : "notes.pdf";
+    const image = /\.(png|jpe?g|webp|tiff?|bmp)$/i.test(name);
+    S.docs.push({ id: nid(), name, label: $("#lbl").value, pages: image ? 1 : 6, chunks: image ? 1 : 14, ocr: image });
+    render();
+  });
+  $$("[data-del]").forEach((b) => b.addEventListener("click", () => { S.docs = S.docs.filter((d) => d.id !== b.dataset.del); render(); }));
+}
+
+function apiView() {
+  const code = `<span class="k">from</span> openai <span class="k">import</span> OpenAI
+
+client = OpenAI(base_url=<span class="s">"https://smartroute.lab.example/v1"</span>, api_key=<span class="s">"sr-••••••••"</span>)
+reply = client.chat.completions.create(
+    model=<span class="s">"smartroute/auto"</span>,
+    messages=[{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: question}],
+    extra_body={<span class="s">"smartroute"</span>: {<span class="s">"privacy_mode"</span>: <span class="s">"cloud_allowed"</span>, <span class="s">"consent"</span>: <span class="k">False</span>}},
+)
+print(reply.model_extra[<span class="s">"smartroute"</span>])`;
+  return `${h2("API")}
+  <div class="grid g2">
+    <div class="card"><header>Provider keys</header><table><tr><th>Provider</th><th>Key</th><th>Scope</th></tr>
+      <tr><td>Anthropic</td><td class="mono">••••3f9a</td><td><span class="badge b-mute">Personal</span></td></tr>
+      <tr><td>OpenAI</td><td class="mono">••••a71c</td><td><span class="badge b-mute">Personal</span></td></tr>
+      <tr><td>Anthropic</td><td class="mono">••••90de</td><td><span class="badge b-brand">Shared</span></td></tr></table></div>
+    <div class="card"><header>API keys</header><table><tr><th>Name</th><th>Key</th><th>Mode</th></tr>
+      <tr><td>thesis-backend</td><td class="mono">sr-Xk3p…</td><td>Cloud</td></tr>
+      <tr><td>grading-tool</td><td class="mono">sr-9QaL…</td><td>Local</td></tr></table></div>
+  </div>
+  <div class="card mt"><header>Usage</header><div class="body">
+    <pre class="code">${code}</pre>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 10px">
+      <button class="btn sec" data-api="normal">Normal</button>
+      <button class="btn sec" data-api="cnic">CNIC</button>
+      <button class="btn sec" data-api="nolocal">CNIC, no local</button></div>
+    <div id="apiOut">${S.apiOut ? apiOutHtml(S.apiOut) : ""}</div>
+  </div></div>`;
+}
+function apiOutHtml(o) { return `<div class="small" style="margin-bottom:6px"><span class="badge ${o.status === 200 ? "b-ok" : "b-bad"}">HTTP ${o.status}</span> ${esc(o.note)}</div><pre class="code wrap">${esc(JSON.stringify(o.body, null, 2))}</pre>`; }
+function apiCall(kind) {
+  const user = S.accounts.user;
+  const text = kind === "normal" ? "Explain the trade-offs between BM25 and dense retrieval for scientific question answering." : "Draft a reply to the student about a grade appeal. CNIC 42101-1234567-1.";
+  const models = kind === "nolocal" ? S.models.map((m) => ({ ...m, enabled: m.local ? false : m.enabled })) : S.models;
+  const p = plan({ user, session: null, text, consent: false, confidential: false, pinned: "", models, source: "api" });
+  if (p.sensitive) addAudit(p, user);
+  const meta = { event_id: hexId(), status: p.abstain ? "abstained" : "ok", model: p.decision && !p.abstain ? p.decision.name : null, sensitive: p.sensitive, entity_types: p.types, explanation: p.abstain || p.rule, eligible: p.routes.map((r) => r.name), exclusions: p.exclusions };
+  if (p.abstain) return { status: 403, note: "Blocked", body: { error: { message: p.abstain, type: "privacy_policy_block", code: "privacy_policy_block" }, smartroute: meta } };
+  return { status: 200, note: p.sensitive ? "Local model" : "Routed", body: { id: "chatcmpl-" + meta.event_id, object: "chat.completion", model: meta.model, choices: [{ index: 0, message: { role: "assistant", content: "…" }, finish_reason: "stop" }], usage: { prompt_tokens: p.inTok, completion_tokens: p.outTok, total_tokens: p.inTok + p.outTok }, smartroute: meta } };
+}
+function bindApi() { $$("[data-api]").forEach((b) => b.addEventListener("click", () => { S.apiOut = apiCall(b.dataset.api); $("#apiOut").innerHTML = apiOutHtml(S.apiOut); })); }
+
+function demoDays() {
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const out = [], today = new Date(); today.setHours(0, 0, 0, 0);
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    const n = Math.round(42 + rnd() * 30), local = Math.round(n * (0.33 + rnd() * 0.1)), strong = Math.round(n * (0.15 + rnd() * 0.07)), cheap = n - local - strong;
+    out.push({ date: d, n, local, cheap, strong, cost: cheap * 0.00035 + strong * 0.014, est: n * 0.014 });
+  }
+  return out;
+}
+function analyticsData() {
+  const days = demoDays(), last = days[days.length - 1];
+  for (const e of S.events.filter((x) => x.status === "ok")) { const m = S.models.find((x) => x.name === e.model); last.n++; last[m.tier]++; last.cost += e.cost; last.est += (e.inTok * 4 + e.outTok * 20) / 1e6; }
+  const tot = days.reduce((a, d) => ({ n: a.n + d.n, local: a.local + d.local, cheap: a.cheap + d.cheap, strong: a.strong + d.strong, cost: a.cost + d.cost, est: a.est + d.est }), { n: 0, local: 0, cheap: 0, strong: 0, cost: 0, est: 0 });
+  return { days, tot };
+}
+function lineChart(days) {
+  const W = 560, H = 250, L = 52, R = 100, T = 14, B = 34;
+  const peak = Math.max(...days.map((d) => d.est));
+  const step = [0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 5, 10].find((s) => peak / s <= 5) || 10;
+  const max = Math.ceil(peak / step) * step;
+  const x = (i) => L + (i * (W - L - R)) / (days.length - 1), y = (v) => T + (H - T - B) * (1 - v / max);
+  const path = (k) => days.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join("");
+  const ticks = Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step).map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--chart-grid)"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--chart-axis)">$${v.toFixed(2)}</text>`).join("");
+  const xl = days.map((d, i) => (i % 3 === 1 || i === days.length - 1 ? `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" font-size="11" fill="var(--chart-axis)">${d.date.toLocaleDateString([], { month: "short", day: "numeric" })}</text>` : "")).join("");
+  const n = days.length - 1;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily cost">
+    ${ticks}${xl}
+    <path d="${path("est")}" fill="none" stroke="var(--chart-muted)" stroke-width="2" stroke-dasharray="6 5"/>
+    <path d="${path("cost")}" fill="none" stroke="var(--chart-main)" stroke-width="2"/>
+    <circle cx="${x(n)}" cy="${y(days[n].est)}" r="4" fill="var(--chart-muted)" stroke="var(--card)" stroke-width="2"/>
+    <circle cx="${x(n)}" cy="${y(days[n].cost)}" r="4" fill="var(--chart-main)" stroke="var(--card)" stroke-width="2"/>
+    <text x="${x(n) + 10}" y="${y(days[n].est) + 4}" font-size="11.5" fill="var(--ink2)">Strong-only</text>
+    <text x="${x(n) + 10}" y="${y(days[n].cost) + 4}" font-size="11.5" fill="var(--ink2)">Measured</text>
+    <line id="xhair" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--chart-axis)" stroke-dasharray="3 3" visibility="hidden"/>
+    <rect id="lineHit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>`;
+}
+function barChart(tot) {
+  const rows = [["Llama 3.1 8B", "Local", tot.local], ["Claude Haiku 5.5", "Fast", tot.cheap], ["Claude Opus 5.5", "Strong", tot.strong]];
+  const W = 420, H = 250, L = 14, T = 26, B = 46, bw = 84, gap = (W - L * 2 - bw * 3) / 2, max = Math.max(...rows.map((r) => r[2])) * 1.08;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Answers by model">
+    <line x1="${L}" x2="${W - L}" y1="${H - B}" y2="${H - B}" stroke="var(--chart-grid)"/>
+    ${rows.map(([label, tier, v], i) => { const x = L + i * (bw + gap), h = (H - T - B) * (v / max), yy = H - B - h; return `<g class="barg" data-tip="${esc(label)}: ${v} (${pct(v / tot.n)})">
+      <path d="M${x},${H - B} V${yy + 4} Q${x},${yy} ${x + 4},${yy} H${x + bw - 4} Q${x + bw},${yy} ${x + bw},${yy + 4} V${H - B} Z" fill="var(--chart-main)"/>
+      <rect x="${x - 4}" y="${T - 20}" width="${bw + 8}" height="${H - T - B + 20}" fill="transparent"/>
+      <text x="${x + bw / 2}" y="${yy - 7}" text-anchor="middle" font-size="12.5" font-weight="600" fill="var(--ink)">${v}</text>
+      <text x="${x + bw / 2}" y="${H - B + 17}" text-anchor="middle" font-size="11.5" fill="var(--ink2)">${label}</text>
+      <text x="${x + bw / 2}" y="${H - B + 32}" text-anchor="middle" font-size="11" fill="var(--chart-axis)">${tier}</text></g>`; }).join("")}</svg>`;
+}
+let showTable = false;
+function analyticsView() {
+  const { days, tot } = analyticsData();
+  const conf = S.audit.length + 9, blocked = S.audit.filter((a) => a.decision === "cloud_blocked").length + 7, consented = S.audit.filter((a) => a.left).length + 2;
+  const stat = (k, v, n, est) => `<div class="card stat"><div class="k">${k}${est ? '<span class="badge b-warn">Est.</span>' : ""}</div><div class="v">${v}</div><div class="n">${n || "&nbsp;"}</div></div>`;
+  return `${h2("Analytics", '<span class="small">14 days</span>')}
+  <div class="grid g3">
+    ${stat("Requests", tot.n)}${stat("Cost", usd(tot.cost, 2))}${stat("Local", pct(tot.local / tot.n))}
+    ${stat("Saving", pct(1 - tot.cost / tot.est), "vs strong-only", true)}${stat("Confidential", conf, `${blocked} blocked`)}${stat("Consented", consented)}
+  </div>
+  <div class="grid mt" style="grid-template-columns:1.3fr 1fr">
+    <div class="card"><header>Daily cost <button class="linkbtn" id="tbl">${showTable ? "Chart" : "Table"}</button></header><div class="body">
+      ${showTable ? `<table><tr><th>Day</th><th>Requests</th><th>Measured</th><th>Strong-only</th></tr>${days.map((d) => `<tr><td>${d.date.toLocaleDateString()}</td><td>${d.n}</td><td>${usd(d.cost, 3)}</td><td>${usd(d.est, 3)}</td></tr>`).join("")}</table>`
+      : `<div class="legend"><span><i style="background:var(--chart-main)"></i>Measured</span><span><i style="background:var(--chart-muted)"></i>Strong-only (est.)</span></div><div class="chart" id="lc">${lineChart(days)}<div class="tip" id="tip1"></div></div>`}
+    </div></div>
+    <div class="card"><header>Answers by model</header><div class="body"><div class="chart" id="bc">${barChart(tot)}<div class="tip" id="tip2"></div></div></div></div>
+  </div>`;
+}
+function bindAnalytics() {
+  $("#tbl").addEventListener("click", () => { showTable = !showTable; render(); });
+  const lc = $("#lc");
+  if (lc) {
+    const { days } = analyticsData(), svg = lc.querySelector("svg"), tip = $("#tip1"), hair = $("#xhair"), W = 560, L = 52, R = 100;
+    $("#lineHit").addEventListener("mousemove", (e) => {
+      const r = svg.getBoundingClientRect(), sx = ((e.clientX - r.left) / r.width) * W;
+      const i = Math.max(0, Math.min(days.length - 1, Math.round(((sx - L) / (W - L - R)) * (days.length - 1))));
+      const xx = L + (i * (W - L - R)) / (days.length - 1), d = days[i];
+      hair.setAttribute("x1", xx); hair.setAttribute("x2", xx); hair.setAttribute("visibility", "visible");
+      tip.innerHTML = `<b>${d.date.toLocaleDateString([], { month: "short", day: "numeric" })}</b> · ${d.n}<br>Measured ${usd(d.cost, 3)}<br>Strong-only ${usd(d.est, 3)}`;
+      tip.style.display = "block"; tip.style.left = Math.min((xx / W) * r.width + 12, r.width - 160) + "px"; tip.style.top = "20px";
+    });
+    $("#lineHit").addEventListener("mouseleave", () => { tip.style.display = "none"; hair.setAttribute("visibility", "hidden"); });
+  }
+  const bc = $("#bc"), tip2 = $("#tip2");
+  bc.querySelectorAll(".barg").forEach((g) => {
+    g.addEventListener("mousemove", (e) => { const r = bc.getBoundingClientRect(); tip2.textContent = g.dataset.tip; tip2.style.display = "block"; tip2.style.left = Math.min(e.clientX - r.left + 12, r.width - 180) + "px"; tip2.style.top = e.clientY - r.top - 34 + "px"; });
+    g.addEventListener("mouseleave", () => (tip2.style.display = "none"));
+  });
+}
+
+function usersView() {
+  const sup = me().role === "superadmin", orgDefault = S.policy.allow_default ? "allow" : "deny";
+  return `${h2("Users")}
+  <div class="card"><table><tr><th>User</th><th>Role</th><th>Confidential</th><th>Budget</th></tr>
+  ${allUsers().map((u) => { const v = u.allow === null ? "inherit" : u.allow ? "allow" : "deny"; return `<tr class="${S.flash === u.id ? "new" : ""}"><td><span style="display:flex;gap:10px;align-items:center">${avatar(u.name, 26)}<span><b style="color:var(--ink);font-weight:500">${esc(u.name)}</b><div class="small">${esc(u.email)}</div></span></span></td>
+    <td style="text-transform:capitalize">${u.role}</td>
+    <td><select data-perm="${u.id}" ${sup ? "" : "disabled"} style="max-width:190px" id="perm-${u.id}"><option value="inherit" ${v === "inherit" ? "selected" : ""}>Default (${orgDefault})</option><option value="allow" ${v === "allow" ? "selected" : ""}>Allow</option><option value="deny" ${v === "deny" ? "selected" : ""}>Deny</option></select></td>
+    <td>${u.budget === null ? '<span class="small">None</span>' : "$" + u.budget}</td></tr>`; }).join("")}
+  </table></div>
+  <div class="card mt"><header>History</header>${changesTable()}</div>`;
+}
+function changesTable() {
+  if (!S.changes.length) return '<div class="body small">No changes</div>';
+  return `<table><tr><th>Time</th><th>By</th><th>Target</th><th>Change</th></tr>${S.changes.map((c) => `<tr class="${c.fresh ? "new" : ""}"><td>${clock(c.t)}</td><td>${esc(c.actor)}</td><td>${esc(c.target)}</td><td><b style="color:var(--ink);font-weight:500">${esc(c.field)}</b>: ${esc(String(c.before))} → ${esc(String(c.after))}</td></tr>`).join("")}</table>`;
+}
+function setPermission(uid, value) {
+  const u = allUsers().find((x) => x.id === uid), before = u.allow === null ? "inherit" : u.allow ? "allow" : "deny";
+  if (before === value) return; u.allow = value === "inherit" ? null : value === "allow"; S.flash = uid; logChange(u.email, "confidential", before, value);
+}
+function bindUsers() { $$("[data-perm]").forEach((s) => s.addEventListener("change", () => { setPermission(s.dataset.perm, s.value); render(); })); }
+
+function auditView() {
+  const seed = [
+    { t: new Date(Date.now() - 86400000 * 2.2), user: "bilal@university.example", source: "chat", triggers: ["pii_detected"], types: ["PHONE"], decision: "cloud_blocked", reason: "confidential_not_permitted", consent: false, dest: "local-default", left: false, preview: "Ask the guardian to call me back on [PHONE] about the fee.", hash: "9c41e0aa7b12" },
+    { t: new Date(Date.now() - 86400000 * 1.4), user: "hamza@university.example", source: "api", triggers: ["confidential_document"], types: [], decision: "cloud_allowed", reason: "confidential_permitted", consent: true, dest: "claude-opus", left: true, preview: "–", hash: "5be71d03c9f4" },
+    { t: new Date(Date.now() - 86400000 * 0.6), user: "ayesha@university.example", source: "chat", triggers: ["explicit_label"], types: [], decision: "cloud_blocked", reason: "local_only_mode", consent: false, dest: "local-default", left: false, preview: "Internal draft of the thesis results, do not share.", hash: "e02a6c51d8b7" },
+  ];
+  const rows = [...S.audit, ...seed].sort((a, b) => b.t - a.t);
+  return `${h2("Audit", `<span class="small">${rows.length} events</span>`)}
+  <div class="card"><table><tr><th>Time</th><th>User</th><th>Reason</th><th>Decision</th><th>Destination</th><th>Preview</th></tr>
+  ${rows.map((r) => `<tr class="${r.fresh ? "new" : ""}"><td style="white-space:nowrap">${clock(r.t)}<div class="small">${r.source}</div></td><td>${esc(r.user)}</td>
+    <td>${r.triggers.map((t) => `<span class="badge b-warn" style="margin:1px">${t.replace(/_/g, " ")}</span>`).join(" ")}${r.types.length ? `<div class="small">${r.types.join(", ")}</div>` : ""}</td>
+    <td><span class="badge ${r.decision === "cloud_blocked" ? "b-ok" : "b-bad"}">${r.decision === "cloud_blocked" ? "Blocked" : "Allowed"}</span><div class="small">${DECISION[r.reason]}${r.consent ? " · consent" : ""}</div></td>
+    <td style="white-space:nowrap">${esc(r.dest || "–")}<div style="margin-top:3px">${r.left ? '<span class="badge b-bad">Sent out</span>' : '<span class="badge b-ok">Local</span>'}</div></td>
+    <td class="small" style="max-width:230px">${esc(r.preview)}<div class="mono" style="margin-top:3px">${r.hash.slice(0, 10)}…</div></td></tr>`).join("")}
+  </table></div>`;
+}
+
+function policyView() {
+  const sup = me().role === "superadmin", P = S.policy;
+  const row = (k, label) => `<div class="set-row"><span>${label}</span>${sw("pol-" + k, P[k], !sup)}</div>`;
+  const routers = [["rules", "Rules"], ["frozen", "Frozen"], ["bandit", "ε-greedy"], ["linucb", "LinUCB"]];
+  return `${h2("Policy", sup ? "" : '<span class="badge b-mute">Read only</span>')}
+  <div class="grid g2">
+    <div class="card"><header>Privacy</header><div class="body">
+      ${row("cloud_enabled", "Cloud")}${row("allow_default", "Confidential to cloud")}${row("require_consent", "Consent")}${row("exempt_names_public_docs", "Ignore names in public files")}
+    </div></div>
+    <div class="card"><header>Routing</header><div class="body">
+      <div class="seg">${routers.map(([v, l]) => `<button data-router="${v}" class="${P.routing === v ? "on" : ""}" ${sup ? "" : "disabled"}>${l}</button>`).join("")}</div>
+      ${P.routing !== "rules" ? '<div class="notice" style="margin-top:12px">Demo uses Rules</div>' : ""}
+      <div class="grid g3" style="margin-top:14px">
+        <label class="fld"><span>Quality</span><input class="input" value="0.5" disabled></label>
+        <label class="fld"><span>Cost</span><input class="input" value="0.3" disabled></label>
+        <label class="fld"><span>Latency</span><input class="input" value="0.2" disabled></label>
+      </div>
+    </div></div>
+    <div class="card"><header>Context</header><div class="body">
+      <label class="fld"><span>History (tokens)</span><input class="input" type="number" value="${P.history_budget}" ${sup ? "" : "disabled"} data-num="history_budget"></label>
+      <div style="margin-top:8px">${row("summary", "Summaries")}</div>
+    </div></div>
+    <div class="card"><header>Limits</header><div class="body grid g2">
+      <label class="fld"><span>Budget (USD/month)</span><input class="input" type="number" value="${P.budget}" ${sup ? "" : "disabled"} data-num="budget"></label>
+      <label class="fld"><span>Expiry</span><input class="input" value="60 min" disabled></label>
+      <label class="fld"><span>Metadata</span><input class="input" value="30 days" disabled></label>
+      <label class="fld"><span>Audit</span><input class="input" value="365 days" disabled></label>
+    </div></div>
+  </div>
+  <div class="card mt"><header>History</header>${changesTable()}</div>`;
+}
+function bindPolicy() {
+  $$("[data-opt^=pol-]").forEach((c) => c.addEventListener("click", () => { const k = c.dataset.opt.slice(4); logChange("policy", k, S.policy[k], !S.policy[k]); S.policy[k] = !S.policy[k]; render(); }));
+  $$("[data-router]").forEach((c) => c.addEventListener("click", () => { if (S.policy.routing === c.dataset.router) return; logChange("policy", "routing", S.policy.routing, c.dataset.router); S.policy.routing = c.dataset.router; render(); }));
+  $$("[data-num]").forEach((c) => c.addEventListener("change", () => { const k = c.dataset.num; logChange("policy", k, S.policy[k], +c.value); S.policy[k] = +c.value; render(); }));
+}
+
+function modelsView() {
+  return `${h2("Models")}
+  <div class="card"><table><tr><th>Model</th><th>Provider</th><th>Tier</th><th>Price in / out</th><th>Context</th><th>Health</th><th>On</th></tr>
+  ${S.models.map((m) => `<tr><td><b style="color:var(--ink);font-weight:500">${esc(m.display)}</b><div class="mono small">${m.name}</div></td><td>${m.vendor}</td><td><span class="badge ${TIER_BADGE[m.tier]}">${TIER[m.tier]}</span></td>
+    <td>${m.local ? "Free" : `$${m.pin.toFixed(2)} / $${m.pout.toFixed(2)}`}<div class="small">3 Nov 2026</div></td><td>${m.ctx.toLocaleString()}</td>
+    <td><span class="badge b-ok">OK</span></td><td>${sw("model-" + m.name, m.enabled)}</td></tr>`).join("")}
+  </table></div>`;
+}
+function bindModels() { $$("[data-opt^=model-]").forEach((c) => c.addEventListener("click", () => { const m = S.models.find((x) => x.name === c.dataset.opt.slice(6)); m.enabled = !m.enabled; logChange("models", m.name, !m.enabled, m.enabled); render(); })); }
+
+const VIEWS = { general: generalView, files: filesView, api: apiView, analytics: analyticsView, users: usersView, audit: auditView, policy: policyView, models: modelsView };
+const BIND = { files: bindFiles, api: bindApi, analytics: bindAnalytics, users: bindUsers, policy: bindPolicy, models: bindModels };
+
+/* ============================================================== demo steps (narration: README.md) */
+async function typeAndSend(text, opts = {}) {
+  const box = $("#box");
+  if (!S.fast && box) {
+    box.focus();
+    for (let i = 1; i <= text.length; i++) { box.value = text.slice(0, i); S.draftText = box.value; await sleep(14); }
+    const b = $("#sendBtn"); if (b) b.disabled = false;
+    await sleep(150);
+  }
+  const bot = await send(text, opts);
+  await sleep(250);
+  return bot;
+}
+function spot(sel) { $$(".spot").forEach((e) => e.classList.remove("spot")); const el = typeof sel === "string" ? $(sel) : sel; if (el) { el.classList.add("spot"); el.scrollIntoView({ block: "nearest" }); } }
+function login(acct) { S.account = acct; S.flash = null; S.menu = null; }
+function openDetails(bot) { S.openWhy = bot.id; renderThread(); }
+const HARD_Q = "Compare dropout and weight decay for regularising a small CNN, analyse the trade-offs step by step and justify which is more robust?";
+const STEPS = [
+  { title: "Sign in", run: async () => { login("user"); startNewChat(); go("chat"); } },
+  { title: "Simple → Local", run: async () => { await typeAndSend("What is overfitting?"); } },
+  { title: "Complex → Strong", run: async () => { openDetails(await typeAndSend(HARD_Q)); } },
+  { title: "Follow-up", run: async () => { openDetails(await typeAndSend("Why?")); } },
+  { title: "CNIC → Local", run: async () => { startNewChat(); render(); openDetails(await typeAndSend("Draft a short reply to the student about her grade appeal. Her CNIC is 42101-1234567-1.")); } },
+  { title: "CNIC photo → OCR", run: async () => { startNewChat(); S.menu = "plus"; render(); spot("#photoItem"); await sleep(900); S.menu = null; await attachPhoto(); await typeAndSend("Fill in the admission form using the details on my attached card."); } },
+  { title: "Audit", run: async () => { login("superadmin"); go("audit"); } },
+  { title: "Grant access", run: async () => { go("users"); spot("#perm-u3"); await sleep(900); setPermission("u3", "allow"); render(); spot("#perm-u3"); } },
+  { title: "Consent → Cloud", run: async () => { login("user"); startNewChat(); S.composer.consent = true; render(); spot("#consentPill"); await sleep(900); openDetails(await typeAndSend("Rewrite this note formally for the registrar: the student with CNIC 42101-1234567-1 requests a transcript.", { consent: true })); } },
+  { title: "Local only", run: async () => { startNewChat(); S.draftMode = "local_only"; render(); spot("#localPill"); await sleep(900); openDetails(await typeAndSend(HARD_Q)); } },
+  { title: "API", run: async () => { go("api"); S.apiOut = apiCall("cnic"); render(); await sleep(1600); S.apiOut = apiCall("nolocal"); render(); spot("#apiOut"); } },
+  { title: "Analytics", run: async () => { go("analytics"); } },
+  { title: "Policy", run: async () => { login("superadmin"); go("policy"); } },
+];
+let step = 0, running = false, tourMin = false;
+function renderTour() {
+  const el = $("#tour");
+  if (new URLSearchParams(location.search).get("panel") === "0") { el.style.display = "none"; return; }
+  const cur = STEPS[step - 1];
+  el.className = "tour" + (tourMin ? " min" : "");
+  el.innerHTML = `<div class="thead"><b>Steps</b><span>${step ? `${step} / ${STEPS.length}` : STEPS.length}</span><span class="grow"></span><button class="x" id="tmin">${tourMin ? "Show" : "Hide"}</button></div>
+    <div class="tbody"><h3>${cur ? esc(cur.title) : "Walkthrough"}</h3>
+    <div class="prog"><div style="width:${(step / STEPS.length) * 100}%"></div></div>
+    <div class="ctl"><button class="tb sec" id="treset">Restart</button><button class="tb" id="tnext" ${running || step >= STEPS.length ? "disabled" : ""}>${running ? "…" : step >= STEPS.length ? "Done" : step ? "Next" : "Start"}</button></div></div>`;
+  $("#tmin").onclick = () => { tourMin = !tourMin; renderTour(); };
+  $("#treset").onclick = () => { location.href = location.pathname; };
+  $("#tnext").onclick = next;
+}
+async function next() {
+  if (running || step >= STEPS.length) return;
+  running = true; step++; renderTour();
+  try { await STEPS[step - 1].run(); } finally { running = false; renderTour(); }
+}
+
+/* ============================================================== start */
+(async function start() {
+  const params = new URLSearchParams(location.search);
+  const upTo = Math.min(+params.get("step") || 0, STEPS.length);
+  if (upTo) { S.fast = true; for (let i = 0; i < upTo; i++) { step = i; await next(); } S.fast = false; }
+  const h = location.hash.slice(1);
+  if (h && h !== "login" && S.account) screen = h;
+  if (params.get("why") === "0") S.openWhy = null;
+  if (params.get("menu")) S.menu = params.get("menu");
+  if (params.get("sidebar") === "0") S.collapsed = true;
+  render(); renderTour();
+  $$(".spot").forEach((e) => e.classList.remove("spot"));
+  document.body.dataset.ready = "1";
+})();
+window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (h && S.account && h !== screen) { screen = h; render(); } });
+</script>
+</body>
+</html>

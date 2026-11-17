@@ -1,0 +1,8 @@
+# Store text with LF so scripts and Dockerfiles work on the Linux GPU server.
+* text=auto eol=lf
+
+*.pdf binary
+*.png binary
+*.jpg binary
+*.pptx binary
+*.ico binary

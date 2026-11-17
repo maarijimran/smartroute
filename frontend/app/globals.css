@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Warm ivory light theme and warm charcoal dark theme with a terracotta accent.
+ * Every Tailwind colour reads one of these variables (see tailwind.config.ts).
+ *   white    card, composer and menu surface
+ *   slate-50 page background, slate-900 primary text
+ */
+:root {
+  color-scheme: light;
+  --white: 255 255 255;
+  --sidebar: 245 244 237;
+  --sidebar-active: 232 230 220;
+  --bubble: 240 238 230;
+  --onbrand: 255 255 255;
+  --slate-50: 250 249 245;
+  --slate-100: 240 238 230;
+  --slate-200: 229 226 216;
+  --slate-300: 214 211 200;
+  --slate-400: 156 154 146;
+  --slate-500: 115 114 108;
+  --slate-600: 94 93 89;
+  --slate-700: 61 61 58;
+  --slate-800: 40 40 38;
+  --slate-900: 20 20 19;
+  --brand-50: 250 238 232;
+  --brand-100: 245 222 211;
+  --brand-500: 217 119 87;
+  --brand-600: 201 100 66;
+  --brand-700: 174 86 48;
+  --emerald-50: 236 245 238;
+  --emerald-100: 220 237 225;
+  --emerald-200: 186 218 196;
+  --emerald-700: 46 112 72;
+  --emerald-800: 38 94 60;
+  --emerald-900: 30 76 48;
+  --amber-50: 251 245 230;
+  --amber-100: 246 234 204;
+  --amber-200: 236 214 160;
+  --amber-800: 133 86 18;
+  --amber-900: 110 70 14;
+  --red-50: 251 238 236;
+  --red-100: 247 222 218;
+  --red-200: 238 190 182;
+  --red-600: 191 64 52;
+  --red-700: 168 52 42;
+  --red-800: 140 42 34;
+  --red-900: 116 34 28;
+  --chart-main: #c96442;
+  --chart-muted: #9c9a92;
+  --chart-grid: #e5e2d8;
+  --chart-axis: #73726c;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --white: 48 48 46;
+  --sidebar: 31 30 29;
+  --sidebar-active: 20 20 19;
+  --bubble: 20 20 19;
+  --onbrand: 255 255 255;
+  --slate-50: 38 38 36;
+  --slate-100: 31 30 29;
+  --slate-200: 62 62 56;
+  --slate-300: 82 81 76;
+  --slate-400: 133 131 125;
+  --slate-500: 156 154 146;
+  --slate-600: 176 174 165;
+  --slate-700: 194 192 182;
+  --slate-800: 222 220 209;
+  --slate-900: 250 249 245;
+  --brand-50: 58 40 32;
+  --brand-100: 74 46 34;
+  --brand-500: 217 119 87;
+  --brand-600: 217 119 87;
+  --brand-700: 232 149 120;
+  --emerald-50: 30 44 34;
+  --emerald-100: 34 54 40;
+  --emerald-200: 46 80 58;
+  --emerald-700: 134 200 156;
+  --emerald-800: 134 200 156;
+  --emerald-900: 176 222 190;
+  --amber-50: 52 42 24;
+  --amber-100: 64 50 24;
+  --amber-200: 96 74 30;
+  --amber-800: 230 190 110;
+  --amber-900: 240 210 150;
+  --red-50: 58 32 30;
+  --red-100: 72 36 32;
+  --red-200: 110 48 42;
+  --red-600: 232 120 104;
+  --red-700: 240 150 136;
+  --red-800: 240 150 136;
+  --red-900: 248 190 180;
+  --chart-main: #d97757;
+  --chart-muted: #85837d;
+  --chart-grid: #3e3e38;
+  --chart-axis: #9c9a92;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 font-sans text-slate-900 antialiased;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 disabled:opacity-60;
+  }
+  .th {
+    @apply whitespace-nowrap px-3 py-2 text-left text-xs font-medium text-slate-500;
+  }
+  .td {
+    @apply px-3 py-2.5 align-top text-sm text-slate-700;
+  }
+  /* Code stays dark in both themes. */
+  .code-block {
+    @apply overflow-x-auto rounded-lg p-4 font-mono text-xs leading-relaxed;
+    background: #1f1e1d;
+    color: #e8e6dc;
+    border: 1px solid #3e3e38;
+  }
+  .menu {
+    @apply absolute z-30 min-w-[13rem] rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-lg;
+  }
+  .menu-item {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-slate-700 hover:bg-slate-100 disabled:opacity-50;
+  }
+  .icon-btn {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40;
+  }
+}
+
+/* Slim scrollbars in the sidebar and thread. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--slate-300)) transparent;
+}

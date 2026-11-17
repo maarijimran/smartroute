@@ -1,0 +1,11 @@
+# Server-only dependencies (GPU machine). Do NOT install on the laptop.
+# Install PyTorch first with the wheel that matches the server's CUDA version:
+#   https://pytorch.org/get-started/locally/
+presidio-analyzer>=2.2
+spacy>=3.7
+gliner>=0.2
+sentence-transformers>=3.0
+scikit-learn>=1.4
+pandas>=2.2
+datasets>=2.19
+tiktoken>=0.7

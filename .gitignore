@@ -1,0 +1,25 @@
+# Secrets and local state
+.env
+backend/.env
+frontend/.env.local
+*.db
+*.db-journal
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Benchmark data, model outputs and fitted artifacts (regenerate with the scripts)
+backend/data/
+backend/artifacts/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+
+# Local scratch
+.claude/
+*.log
