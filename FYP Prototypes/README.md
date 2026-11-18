@@ -3,6 +3,7 @@
 | File | What it is |
 |---|---|
 | `SmartRoute_Jury_Presentation.pptx` | 16-slide deck with speaker notes on every slide (about 20 minutes) |
+| `SmartRoute_Routing_Techniques.pptx` | 60-slide deck: every routing technique from the map (A1–A8, B9–B10, C11–C13, D1–D4) simulated step by step on one shared example, with Morph transitions and speaker notes. Present it in slide-show mode to see the animation |
 | `SmartRoute_Prototype.html` | Clickable prototype of the real screens. Open it in Chrome or Edge; it needs no internet and no server |
 | `screens/` | Screenshots of each demo step plus the new-chat screen (light theme); `screens/dark/` has the same set in the dark theme |
 
@@ -50,3 +51,13 @@ Things worth trying live:
 - **Is the CNIC card real?** No. It is a generic specimen with a fictional name and the demo number `42101-1234567-1`, marked SPECIMEN and "Not a real document", and it does not copy the official card design.
 - **Does the OCR really run?** In the prototype the OCR result is prepared in advance. In the gateway, `baidu/Unlimited-OCR` reads the image on the GPU server and is tested with a mock on the laptop. OCR is new since the proposal (deck slide 11).
 - **What is actually verified?** See deck slide 14: 108 tests pass, and the 200-case privacy suite produced no unauthorised dispatches. All of this was run with mock models and the pattern detectors only.
+
+## Rebuilding the techniques deck
+
+`source/routing_techniques_deck.js` generates `SmartRoute_Routing_Techniques.pptx`. It needs Node with `pptxgenjs` and `jszip`, and the pptx skill's `apply_theme.js` (path in `PPTX_SKILL`):
+
+```bash
+PPTX_SKILL=/path/to/pptx-skill node source/routing_techniques_deck.js SmartRoute_Routing_Techniques.pptx
+```
+
+All numbers on the slides are computed in the script from the formulas, and the script stops if a result contradicts a slide's claim.
