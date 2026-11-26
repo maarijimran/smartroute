@@ -50,6 +50,30 @@ class ModelSpec:
         """Extra output budget for models that spend output tokens on thinking."""
         return int(self.params.get("reasoning_overhead_tokens", 0))
 
+    def router_latency_ms(self, measured_ms: float, in_tokens: int, out_tokens: int) -> float:
+        """The latency the router learns from: measured, unless the entry stands in
+        for a cloud API (see simulated_latency_ms)."""
+        simulated = simulated_latency_ms(self.params, in_tokens, out_tokens)
+        return measured_ms if simulated is None else simulated
+
+
+def simulated_latency_ms(params: dict, in_tokens: int, out_tokens: int) -> float | None:
+    """Cloud-API latency for a model that is served locally only as a stand-in.
+
+    params["simulated_latency"] = {"base_s": ..., "prefill_tps": ..., "decode_tps": ...}
+    latency = base (network + queueing) + prompt / prefill speed + output / decode speed.
+    Returns None when the entry has no latency model, i.e. its measured latency is real.
+    """
+    sim = params.get("simulated_latency")
+    if not sim:
+        return None
+    seconds = (
+        float(sim["base_s"])
+        + max(in_tokens, 0) / float(sim["prefill_tps"])
+        + max(out_tokens, 0) / float(sim["decode_tps"])
+    )
+    return seconds * 1000
+
 
 @dataclass(frozen=True)
 class CredentialSpec:

@@ -139,6 +139,10 @@ class OllamaProvider(Provider):
         if req.temperature is not None:
             options["temperature"] = req.temperature
         body = {"model": req.model_id, "messages": req.messages, "stream": True, "options": options}
+        # Reasoning models: false/true, or "low"/"medium"/"high" for gpt-oss. Thinking
+        # tokens count against num_predict, so leaving it unset can starve the answer.
+        if "think" in req.params:
+            body["think"] = req.params["think"]
         parts: list[str] = []
         final: dict = {}
         try:

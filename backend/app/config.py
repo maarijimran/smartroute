@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str = ""
 
     # Local inference
-    ollama_base_url: str = "http://localhost:11434"
+    # 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 first, and Ollama
+    # listens on IPv4 only, which costs ~2 s per request before the fallback.
+    ollama_base_url: str = "http://127.0.0.1:11434"
     local_model: str = "llama3.1:8b"
     seed_mock_models: bool | None = None  # default: on in development, off in production
 
@@ -36,6 +38,7 @@ class Settings(BaseSettings):
     pii_gliner: bool = False
     pii_gliner_model: str = "nvidia/gliner-pii"
     pii_gliner_threshold: float = 0.5
+    pii_gliner_device: str = "auto"  # "auto" (GPU when available) | "cuda" | "cpu"
     pii_spacy_model: str = "en_core_web_lg"
 
     # OCR for photos and scanned PDFs: "off" | "vllm" | "mock" (development only).

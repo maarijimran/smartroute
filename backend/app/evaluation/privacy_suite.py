@@ -229,6 +229,7 @@ def run_suite(cases: list[dict]) -> dict:
     from .workload import ensure_eval_user
 
     results = []
+    real_scanner = scanner_module.get_scanner()
     with SessionLocal() as db:
         user = ensure_eval_user(db)
         admin = db.execute(select(User).where(User.role == "superadmin")).scalars().first()
@@ -244,7 +245,9 @@ def run_suite(cases: list[dict]) -> dict:
             db.execute(delete(Document))
             db.commit()
             response_cache.clear()
-            scanner_module.set_scanner(_FailingScanner() if case["scanner_failure"] else None)
+            # Reuse one real scanner: resetting to None would build a new one per case and
+            # reload GLiNER from disk 200 times.
+            scanner_module.set_scanner(_FailingScanner() if case["scanner_failure"] else real_scanner)
 
             document_ids = []
             if case["document"]:

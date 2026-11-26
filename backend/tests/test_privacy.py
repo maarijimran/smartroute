@@ -9,6 +9,7 @@ from app.core.privacy.gate import (
     KIND_CONFIDENTIAL_DOC,
     KIND_CONVERSATION,
     KIND_PUBLIC_DOC,
+    KIND_SYSTEM,
     LOCAL_ONLY,
     Assessment,
     Part,
@@ -70,9 +71,12 @@ def test_mask_replaces_spans():
 
 
 def test_scanner_fails_closed_when_enabled_detector_is_missing():
-    # Presidio is enabled but not installed on this machine: the scan must report
-    # failure instead of silently falling back to regex only.
-    broken = PrivacyScanner(Settings(pii_presidio=True, pii_gliner=False))
+    # Presidio is enabled but cannot load (missing package on the laptop, or a missing
+    # spaCy model on the server): the scan must report failure instead of silently
+    # falling back to regex only.
+    broken = PrivacyScanner(
+        Settings(pii_presidio=True, pii_gliner=False, pii_spacy_model="no_such_spacy_model")
+    )
     result = broken.scan("perfectly harmless text")
     assert result.failed
 
@@ -93,6 +97,15 @@ def test_cited_author_names_are_exempt_in_public_documents_only():
     assert gate.assess([Part(KIND_CONVERSATION, "Smith proposed it")]).sensitive
     strict = PolicyConfig(exempt_person_in_public_documents=False)
     assert PayloadGate(person, strict).assess([Part(KIND_PUBLIC_DOC, "Smith proposed it")]).sensitive
+
+
+def test_gateway_system_prompt_is_not_scanned_but_caller_prompts_are():
+    # GLiNER reads "SmartRoute" in the gateway's own prompt as a PERSON; that must not make
+    # every request confidential. A caller's system prompt is conversation and still counts.
+    person = StubScanner([Finding("PERSON", 8, 18, "stub")])
+    gate = PayloadGate(person, PolicyConfig())
+    assert not gate.assess([Part(KIND_SYSTEM, "You are SmartRoute, an assistant.")]).sensitive
+    assert gate.assess([Part(KIND_CONVERSATION, "You are Ayesha Khan's assistant.")]).sensitive
 
 
 def test_confidential_document_label_is_sensitive_without_any_identifier():
