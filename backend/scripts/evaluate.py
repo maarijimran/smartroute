@@ -25,6 +25,7 @@ import numpy as np
 import _common
 from app.core.policy_config import PolicyConfig, RewardWeights
 from app.evaluation import analysis as an
+from app.evaluation.judge import load_judgements
 from app.evaluation.synthetic import SYNTHETIC_CFG
 
 TARGET_SAVING, QUALITY_MARGIN = 0.20, -0.05
@@ -96,6 +97,9 @@ def _arms_after(val, name, cfg, arms, lat, seed):
     return learned
 
 
+STREAM_POLICIES = ("rules", "frozen", "bandit", "linucb", "bandit-cold", "linucb-cold")
+
+
 def stream_experiments(table, cfg, seeds: int, epochs: int) -> dict:
     train, test = table.split("train"), table.split("test")
     arms, lat = an.fit_arms(train, cfg), an.mean_latency(train)
@@ -110,16 +114,21 @@ def stream_experiments(table, cfg, seeds: int, epochs: int) -> dict:
     out = {}
     for label, (order, drift) in scenarios.items():
         out[label] = {"change": None if drift is None else f"{drift.kind} of {drift.model} x{drift.factor} at 50%"}
-        for policy in ("rules", "frozen", "bandit", "linucb"):
-            after, total, regret = [], [], []
+        for policy in STREAM_POLICIES:
+            # "-cold" variants start the same learner from empty weights instead of the
+            # frozen router: the gap shows what offline pre-training is worth.
+            base, start = (policy[: -len("-cold")], None) if policy.endswith("-cold") else (policy, arms)
+            after, first, total, regret = [], [], [], []
             for seed in range(seeds):
                 stream = an.make_stream(test, order=order, epochs=epochs, seed=seed)
-                run = an.replay(test, stream, policy, cfg, arms=arms, latency0=lat, drift=drift, seed=seed)
+                run = an.replay(test, stream, base, cfg, arms=start, latency0=lat, drift=drift, seed=seed)
                 after.append(run.window_mean(0.5, 1.0))
+                first.append(run.window_mean(0.0, 0.125))
                 total.append(float(run.rewards.mean()))
                 regret.append(float(run.regret[-1]))
             out[label][policy] = {
                 "reward_second_half": float(np.mean(after)), "reward_second_half_sd": float(np.std(after)),
+                "reward_first_eighth": float(np.mean(first)),
                 "reward_overall": float(np.mean(total)), "cumulative_regret": float(np.mean(regret)),
             }
     return out
@@ -160,6 +169,8 @@ def main() -> None:
     parser.add_argument("--outcomes", default=_common.data_path("outcomes.jsonl"))
     parser.add_argument("--ratings", default=None, help="data/ratings.json from scripts/ratings.py import")
     parser.add_argument("--policy-json", default=None, help="saved policy (GET /api/policy) to take reward settings from")
+    parser.add_argument("--judgements", default=None, help="data/judgements.jsonl: quality = judge correctness")
+    parser.add_argument("--judge-model", default=None, help="only use grades from this judge model")
     parser.add_argument("--seeds", type=int, default=3)
     parser.add_argument("--epochs", type=int, default=8, help="passes over the test split in stream experiments")
     parser.add_argument("--bootstrap", type=int, default=2000)
@@ -170,7 +181,10 @@ def main() -> None:
     if args.ratings:
         with open(args.ratings, encoding="utf-8") as fh:
             ratings = {tuple(key.split("|", 1)): value for key, value in json.load(fh).items()}
-    table = an.load_outcomes(args.outcomes, ratings)
+    judgements = load_judgements(args.judgements, args.judge_model) if args.judgements else None
+    table = an.load_outcomes(args.outcomes, ratings, judgements)
+    print("Quality: " + ("judge correctness" if judgements is not None else "word overlap")
+          + (" + blinded human ratings (0.7)" if ratings else ""))
     with open(args.outcomes, encoding="utf-8") as fh:
         synthetic = bool(json.loads(fh.readline()).get("synthetic"))
     if args.policy_json:
@@ -209,10 +223,17 @@ def main() -> None:
 
     streams = stream_experiments(table, cfg, args.seeds, args.epochs)
     print(f"\nRQ2  mean reward after the change (second half of the stream), {args.seeds} seeds")
-    print(f"{'scenario':15s} {'rules':>8s} {'frozen':>8s} {'bandit':>8s} {'linucb':>8s}   change")
+    print(f"{'scenario':15s} " + " ".join(f"{p:>11s}" for p in STREAM_POLICIES) + "   change")
     for label, r in streams.items():
-        print(f"{label:15s} " + " ".join(f"{r[p]['reward_second_half']:8.3f}" for p in ("rules", "frozen", "bandit", "linucb"))
+        print(f"{label:15s} " + " ".join(f"{r[p]['reward_second_half']:11.3f}" for p in STREAM_POLICIES)
               + f"   {r['change'] or 'none'}")
+    print("\nCold vs warm start: mean reward over the first eighth of the stream (stationary), "
+          "and cumulative regret over the whole stream")
+    st = streams["stationary"]
+    for name in ("bandit", "linucb"):
+        warm, cold = st[name], st[f"{name}-cold"]
+        print(f"  {name:7s} warm {warm['reward_first_eighth']:.3f} (regret {warm['cumulative_regret']:6.1f})   "
+              f"cold {cold['reward_first_eighth']:.3f} (regret {cold['cumulative_regret']:6.1f})")
 
     sens = sensitivity(table, cfg)
     print("\nWeight sensitivity (frozen router; quality/cost/latency weights)")

@@ -56,7 +56,7 @@ backend/app/
   core/ocr.py, documents.py OCR client (vLLM), PDF/TXT/image extraction, BM25
   api/                      auth, chat, documents, registry, policy, analytics, openai_compat
   evaluation/, scripts/     workload, outcomes, frozen training, ratings, evaluation, privacy suite
-backend/tests/              108 tests (pytest); conftest forces SQLite + OCR off
+backend/tests/              119 tests (pytest); conftest forces SQLite, OCR off, ML detectors off
 frontend/                   Next.js 15 + Tailwind; app/(app)/chat, app/(app)/settings/*
 FYP Prototypes/             offline jury prototype (HTML), deck (pptx), screenshots, presenter README
 ```
@@ -67,7 +67,7 @@ FYP Prototypes/             offline jury prototype (HTML), deck (pptx), screensh
 # backend
 cd backend && python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt     # + requirements-ml.txt on the server
-python -m pytest -q                                          # expect 108 passed
+python -m pytest -q                                          # expect 119 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # frontend

@@ -94,6 +94,12 @@ class PayloadGate:
         failed = False
         preview = ""
         for part in parts:
+            if part.kind == KIND_SYSTEM:
+                # The gateway's own fixed instructions, never user content. Scanning them only
+                # yields false positives: GLiNER reads "SmartRoute" as a person's name, which
+                # made every request confidential. A caller-supplied system prompt is marked
+                # KIND_CONVERSATION and is still scanned.
+                continue
             if part.kind == KIND_CONFIDENTIAL_DOC and "confidential_document" not in triggers:
                 triggers.append("confidential_document")
             result = self._scan(part.text)

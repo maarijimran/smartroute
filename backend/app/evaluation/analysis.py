@@ -77,10 +77,18 @@ class OutcomeTable:
         return next((m for m in self.models if self.tiers[m] == tier), None)
 
 
-def load_outcomes(path: str, ratings: dict[tuple[str, str], float] | None = None) -> OutcomeTable:
+def load_outcomes(
+    path: str,
+    ratings: dict[tuple[str, str], float] | None = None,
+    judgements: dict[tuple[str, str], float] | None = None,
+) -> OutcomeTable:
     """Reads outcomes.jsonl (one line per request and model, written by
     scripts/collect_outcomes.py). `ratings` maps (item_id, model) to a normalised
-    human score H; where present, quality becomes 0.7 H + 0.3 A."""
+    human score H; where present, quality becomes 0.7 H + 0.3 A.
+
+    A is the word-overlap score stored in the file, unless `judgements` (from
+    app.evaluation.judge.load_judgements) is given: then A is the judge's
+    correctness grade, and every answered request must have one."""
     rows: dict[str, dict] = {}
     models: list[str] = []
     meta: dict[str, dict] = {}
@@ -89,11 +97,24 @@ def load_outcomes(path: str, ratings: dict[tuple[str, str], float] | None = None
             if not line.strip():
                 continue
             r = json.loads(line)
+            if r["status"] == "abstained":
+                # The model was never called (context window, privacy): not a failure of
+                # the model, so no outcome. The request becomes incomplete and is dropped.
+                rows.setdefault(r["item_id"], {})
+                continue
             rows.setdefault(r["item_id"], {})[r["model"]] = r
             if r["model"] not in meta:
                 models.append(r["model"])
                 meta[r["model"]] = {"tier": r["tier"], "is_local": r["is_local"]}
     complete = [i for i, by_model in rows.items() if all(m in by_model for m in models)]
+    if judgements is not None:
+        missing = [(i, m) for i in complete for m in models
+                   if rows[i][m]["status"] == "ok" and (i, m) not in judgements]
+        if missing:
+            raise ValueError(
+                f"{len(missing)} answered requests have no judge grade (e.g. {missing[0]}); "
+                "run scripts/judge_outcomes.py until it reports nothing left to grade"
+            )
     n, k = len(complete), len(models)
     first = [rows[i][models[0]] for i in complete]
     quality, cost, est_cost = np.zeros((n, k)), np.zeros((n, k)), np.zeros((n, k))
@@ -102,6 +123,8 @@ def load_outcomes(path: str, ratings: dict[tuple[str, str], float] | None = None
         for b, model in enumerate(models):
             r = rows[item][model]
             q = float(r.get("quality") or 0.0)
+            if judgements is not None and r["status"] == "ok":
+                q = judgements[(item, model)]
             human = (ratings or {}).get((item, model))
             if human is not None:
                 q = 0.7 * human + 0.3 * q

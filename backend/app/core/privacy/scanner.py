@@ -142,9 +142,18 @@ class PrivacyScanner:
         if self._presidio is None:
             with self._lock:
                 if self._presidio is None:
+                    import spacy.util
                     from presidio_analyzer import AnalyzerEngine
                     from presidio_analyzer.nlp_engine import NlpEngineProvider
 
+                    # Presidio downloads a missing spaCy model on the fly, and spaCy's
+                    # downloader ends with sys.exit on failure. Refuse instead: no network
+                    # calls from the privacy gate, and a plain exception keeps fail-closed.
+                    model = self.settings.pii_spacy_model
+                    if not spacy.util.is_package(model):
+                        raise RuntimeError(
+                            f"spaCy model {model!r} is not installed: python -m spacy download {model}"
+                        )
                     provider = NlpEngineProvider(
                         nlp_configuration={
                             "nlp_engine_name": "spacy",
@@ -158,9 +167,16 @@ class PrivacyScanner:
         if self._gliner is None:
             with self._lock:
                 if self._gliner is None:
+                    import torch
                     from gliner import GLiNER
 
-                    self._gliner = GLiNER.from_pretrained(self.settings.pii_gliner_model)
+                    model = GLiNER.from_pretrained(self.settings.pii_gliner_model)
+                    # GLiNER loads on the CPU; on the GPU server that costs seconds per
+                    # long document on every request.
+                    device = self.settings.pii_gliner_device
+                    if device == "auto":
+                        device = "cuda" if torch.cuda.is_available() else "cpu"
+                    self._gliner = model.to(device)
         return self._gliner
 
     def warm_up(self) -> None:

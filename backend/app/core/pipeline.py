@@ -82,12 +82,22 @@ from .tokens import count_messages, count_tokens
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = (
-    "You are SmartRoute, an assistant for academic documents. Answer accurately and concisely. "
-    "When document excerpts are provided, base the answer on them and cite the excerpts you used "
+_PROMPT_BASE = "You are SmartRoute, an assistant for academic documents. Answer accurately and concisely."
+# Models tend to refuse requests that carry personal data. Deciding where such content may
+# go is the gateway's job (privacy gate), not the model's, so the model is told so.
+_PROMPT_PERSONAL = (
+    " Requests may include the user's own personal details, such as names, ID numbers or contact "
+    "details. This server's privacy controls decide where they are processed, so help with them normally."
+)
+_PROMPT_EVIDENCE = (
+    " When document excerpts are provided, base the answer on them and cite the excerpts you used "
     "by their bracketed number, for example [2]. If the excerpts do not contain the answer, say so "
     "instead of guessing."
 )
+# The excerpt rules only when excerpts are attached: without excerpts, small models read
+# them as "answer only from excerpts" and decline ordinary questions.
+SYSTEM_PROMPT_WITH_EVIDENCE = _PROMPT_BASE + _PROMPT_EVIDENCE + _PROMPT_PERSONAL
+SYSTEM_PROMPT_GENERAL = _PROMPT_BASE.replace("an assistant for academic documents", "a helpful assistant") + _PROMPT_PERSONAL
 UNHEALTHY_SECONDS = 60
 LATENCY_EWMA_ALPHA = 0.2
 MAX_TRIM_ROUNDS = 50
@@ -566,7 +576,10 @@ def prepare(db: Session, req: RouteRequest) -> Plan:
         )
 
     evidence = _retrieve(db, req, cfg, query, task, turn.follow_up)
-    system, from_caller = (SYSTEM_PROMPT, False) if req.system_prompt is None else (req.system_prompt, True)
+    if req.system_prompt is not None:
+        system, from_caller = req.system_prompt, True
+    else:
+        system, from_caller = (SYSTEM_PROMPT_WITH_EVIDENCE if evidence else SYSTEM_PROMPT_GENERAL), False
     draft = Draft(
         system, window.recent, evidence, question, system_from_caller=from_caller,
         memory=window.memory, omitted=[m["content"] for m in window.omitted],
@@ -960,6 +973,8 @@ class _RunState:
                     "cost_usd": spec.cost_usd(in_tok, out_tok, cache_read, cache_write),
                     "latency_ms": latency_ms,
                     "error": error,
+                    # Stand-in cloud tiers: the router tracks the simulated API latency.
+                    "router_latency_ms": spec.router_latency_ms(latency_ms, in_tok, out_tok),
                 }
             )
             self.result, self.error, self.text = result, error, "".join(parts)
@@ -1019,7 +1034,8 @@ class _RunState:
                     reward=FAILURE_REWARD if failed else None,
                 )
                 for a in self.attempts:
-                    db.add(Attempt(event_id=plan.event_id, user_id=plan.req.user_id, **a))
+                    columns = {k: v for k, v in a.items() if k != "router_latency_ms"}
+                    db.add(Attempt(event_id=plan.event_id, user_id=plan.req.user_id, **columns))
                     self._update_model_stats(db, a)
                     if a["status"] != "ok" and a["model_name"] != outcome.model:
                         # Attribute a failed attempt to the arm that failed, not to the
@@ -1089,9 +1105,10 @@ class _RunState:
             model.last_error = attempt["error"]
         elif attempt["status"] == "ok":
             model.unhealthy_until = None
+            observed = attempt.get("router_latency_ms", attempt["latency_ms"])
             model.latency_ewma_ms = (
-                (1 - LATENCY_EWMA_ALPHA) * (model.latency_ewma_ms or attempt["latency_ms"])
-                + LATENCY_EWMA_ALPHA * attempt["latency_ms"]
+                (1 - LATENCY_EWMA_ALPHA) * (model.latency_ewma_ms or observed)
+                + LATENCY_EWMA_ALPHA * observed
             )
 
 

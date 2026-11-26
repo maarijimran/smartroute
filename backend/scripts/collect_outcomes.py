@@ -24,10 +24,24 @@ from sqlalchemy import select
 
 from app.bootstrap import bootstrap
 from app.core import pipeline
+from app.core.providers import build_provider
+from app.core.providers.base import ChatRequest
 from app.db import SessionLocal, create_all
 from app.evaluation.scoring import score_answer
 from app.evaluation.workload import append_jsonl, ensure_documents, ensure_eval_user, load_jsonl, request_for
 from app.models import ModelEntry
+
+
+def _warm_up(entry: ModelEntry) -> None:
+    """One tiny unlogged request so a local model is loaded before it is timed."""
+    spec = pipeline.spec_from_entry(entry)
+    request = ChatRequest(model_id=spec.model_id, messages=[{"role": "user", "content": "Hi"}],
+                          max_tokens=8 + spec.reasoning_overhead, temperature=None, params=spec.params)
+    try:
+        for _ in build_provider(spec, None).stream(request):
+            pass
+    except Exception as exc:  # the real call will record the failure properly
+        print(f"  warm-up of {entry.name} failed: {exc}")
 
 
 def main() -> int:
@@ -39,6 +53,11 @@ def main() -> int:
     parser.add_argument("--budget-usd", type=float, required=True, help="stop when measured spend reaches this")
     parser.add_argument("--splits", nargs="+", default=["train", "validation", "test"])
     parser.add_argument("--limit", type=int, default=None, help="only the first N requests (pilot runs)")
+    parser.add_argument(
+        "--by-model", action="store_true",
+        help="answer every request with one model before the next. Use when several models share "
+             "one GPU, so Ollama does not reload a model on every call and inflate its latency.",
+    )
     args = parser.parse_args()
 
     items = [i for i in load_jsonl(args.workload) if i["split"] in args.splits][: args.limit]
@@ -61,36 +80,46 @@ def main() -> int:
         total = len(items) * len(args.models)
         n = len(done)
         print(f"{total} model calls planned, {n} already done, ${spent:.4f} spent so far")
-        for item in items:
-            for model in args.models:
-                if (item["item_id"], model) in done:
-                    continue
-                if spent >= args.budget_usd:
-                    print(f"Budget of ${args.budget_usd:.2f} reached after {n} calls. Re-run to resume.")
-                    return 2
-                plan = pipeline.prepare(db, request_for(item, user, doc_map, args.docs_dir, pinned_model=model))
-                outcome = pipeline.run_to_completion(plan)
-                ok = outcome.status == "ok"
-                auto = score_answer(outcome.text, item["golds"], item["unanswerable"], item["task"]) if ok else 0.0
-                route = plan.routes.get(model)
-                append_jsonl(args.out, {
-                    "item_id": item["item_id"], "doc_id": item["doc_id"], "split": item["split"],
-                    "category": item["category"], "task": item["task"], "model": model,
-                    "tier": registry[model].tier, "is_local": registry[model].is_local,
-                    "status": outcome.status, "quality": auto, "quality_source": "auto",
-                    "cost_usd": outcome.cost_usd, "est_cost_usd": route.est_cost_usd if route else 0.0,
-                    "latency_ms": outcome.latency_ms, "ttft_ms": outcome.ttft_ms,
-                    "in_tokens": outcome.in_tokens, "out_tokens": outcome.out_tokens,
-                    "features": plan.x,
-                    "info": {"in_tokens": plan.est_in_tokens, "complexity": plan.info.complexity,
-                             "has_document": plan.info.has_document},
-                    "event_id": outcome.event_id, "error": outcome.error or plan.abstain_reason,
-                    "prompt": item["prompt"], "answer": outcome.text,
-                })
-                spent += outcome.cost_usd
-                n += 1
-                if n % 25 == 0:
-                    print(f"  {n}/{total} calls, ${spent:.4f} spent")
+        if args.by_model:
+            pairs = [(item, model) for model in args.models for item in items]
+        else:
+            pairs = [(item, model) for item in items for model in args.models]
+        warmed = None
+        for item, model in pairs:
+            if (item["item_id"], model) in done:
+                continue
+            if args.by_model and model != warmed and registry[model].is_local:
+                _warm_up(registry[model])  # keep the model's load time out of its first latency
+                warmed = model
+            if spent >= args.budget_usd:
+                print(f"Budget of ${args.budget_usd:.2f} reached after {n} calls. Re-run to resume.")
+                return 2
+            plan = pipeline.prepare(db, request_for(item, user, doc_map, args.docs_dir, pinned_model=model))
+            outcome = pipeline.run_to_completion(plan)
+            ok = outcome.status == "ok"
+            auto = score_answer(outcome.text, item["golds"], item["unanswerable"], item["task"]) if ok else 0.0
+            route = plan.routes.get(model)
+            append_jsonl(args.out, {
+                "item_id": item["item_id"], "doc_id": item["doc_id"], "split": item["split"],
+                "category": item["category"], "task": item["task"], "model": model,
+                "tier": registry[model].tier, "is_local": registry[model].is_local,
+                "status": outcome.status, "quality": auto, "quality_source": "auto",
+                "cost_usd": outcome.cost_usd, "est_cost_usd": route.est_cost_usd if route else 0.0,
+                # Stand-in cloud tiers get their simulated API latency; the real one is kept.
+                "latency_ms": pipeline.spec_from_entry(registry[model]).router_latency_ms(
+                    outcome.latency_ms, outcome.in_tokens, outcome.out_tokens),
+                "measured_latency_ms": outcome.latency_ms, "ttft_ms": outcome.ttft_ms,
+                "in_tokens": outcome.in_tokens, "out_tokens": outcome.out_tokens,
+                "features": plan.x,
+                "info": {"in_tokens": plan.est_in_tokens, "complexity": plan.info.complexity,
+                         "has_document": plan.info.has_document},
+                "event_id": outcome.event_id, "error": outcome.error or plan.abstain_reason,
+                "prompt": item["prompt"], "answer": outcome.text,
+            })
+            spent += outcome.cost_usd
+            n += 1
+            if n % 25 == 0:
+                print(f"  {n}/{total} calls, ${spent:.4f} spent")
     print(f"Finished: {n} calls, ${spent:.4f} measured API spend. Output: {args.out}")
     return 0
 

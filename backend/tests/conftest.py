@@ -10,6 +10,10 @@ os.environ["SMARTROUTE_BOOTSTRAP_ADMIN_PASSWORD"] = "root-password-1"
 os.environ["SMARTROUTE_SEED_MOCK_MODELS"] = "true"
 os.environ["SMARTROUTE_RATE_LIMIT_RPM"] = "100000"
 os.environ["SMARTROUTE_OCR_BACKEND"] = "off"  # tests install their own fake; ignore the dev .env
+# The server .env turns the ML detectors on; tests exercise the regex path and stay model-free.
+os.environ["SMARTROUTE_PII_PRESIDIO"] = "false"
+os.environ["SMARTROUTE_PII_GLINER"] = "false"
+os.environ["SMARTROUTE_EMBEDDINGS_ENABLED"] = "false"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

@@ -1,10 +1,94 @@
 # SmartRoute: work log and remaining work
 
-Last updated: 17 November 2026. Written for the three team members, including whoever was not in the build session.
+Last updated: 26 November 2026. Written for the three team members, including whoever was not in the build session.
 
 ## Where things stand
 
-The gateway, both phases of the product (chat interface and router API), role-based access control, the confidential audit log, the web interface and the evaluation scripts are written. Everything that can run without a model has been run on the laptop and passes. Nothing that needs a real model, a real API key, the QASPER dataset or Docker has been run yet. That work is waiting for the GPU server, and [SETUP.md](SETUP.md) lists it step by step.
+The gateway, both phases of the product (chat interface and router API), role-based access control, the confidential audit log, the web interface and the evaluation scripts are written. On 26 November the first real run happened on the GPU server: real local models, the QASPER workload, 1,764 collected outcomes, a local correctness judge, a trained frozen router and a first evaluation. See "Server session, 26 November" below. Still not run: any cloud API (there are no keys yet), Docker, PostgreSQL, the OCR model (needs Linux for vLLM) and the human ratings.
+
+## Server session, 26 November
+
+### The server is not what SETUP.md assumed
+
+- **Windows 11**, NVIDIA RTX 4000 Ada (20 GB), 32 GB RAM. No Docker, no WSL, no PostgreSQL. The backend runs from `backend/.venv` (Python 3.11, PyTorch 2.14 cu130) with SQLite.
+- C: is nearly full, so large files live on D: (`OLLAMA_MODELS=D:\SmartRoute\ollama-models`, `HF_HOME=D:\SmartRoute\hf-cache`).
+- OCR weights (`baidu/Unlimited-OCR`) are downloaded, but vLLM does not run on Windows, so `SMARTROUTE_OCR_BACKEND=off` until WSL2 or Docker is set up.
+
+### No cloud keys yet: three local models stand in for the tiers
+
+Registered by `scripts/register_ollama_tiers.py`. All run through Ollama on the GPU.
+
+| Tier | Model | Context | Stand-in for | Price (per M tokens, in/out) | Latency the router sees |
+|---|---|---|---|---|---|
+| local | gpt-oss:20b (think low) | 16k | the local model | free | measured |
+| cheap | qwen3.5:9b (think off) | 16k | a Haiku-class API | **simulated** $0.10 / $0.50 | **simulated**: 0.5 s + in/20k + out/150 tok/s |
+| strong | qwen3.6:27b (think off) | 8k (spills to CPU at 16k) | an Opus-class API | **simulated** $4 / $20 | **simulated**: 1.2 s + in/8k + out/60 tok/s |
+
+All three are marked local, so the privacy gate never blocks them. **Declare in the report** that cheap/strong cost and latency are simulated; the measured local latency is kept in `measured_latency_ms`.
+
+### What was run
+
+1. Workload: 588 requests over 120 papers (only 28 unanswerable questions existed in the sample, not 40). Features fitted on the train split (27 dimensions, 16 PCA).
+2. Pilot (20 requests) → C_ref = $0.0075 (strong model's median request cost), L_ref = 10 s. Saved in the policy and `backend/data/policy.json`.
+3. Outcome collection: 1,764 answers (588 × 3), `--by-model`. Qwen3.6-27B could not take 13 full-paper requests (8k context); those requests are left out of training, not counted as failures.
+4. **Local correctness judge** (`app/evaluation/judge.py`, `scripts/judge_outcomes.py`): Gemma 4 26B (gemma4:26b), a different model family from every graded model, blind to the model name, temperature 0. It lists the reference's key points, marks each covered/partly/missing and flags contradictions; the grade is computed from that checklist (all covered 5, ≥75% 4, ≥40% 3, less 2, contradiction 1). Stability: 94% identical grades when re-graded with another seed. A first rubric (v2) was dropped after an audit showed it gave full marks to confident, detailed answers that missed reference points.
+5. Frozen router trained on judge correctness: **v3** (active; `backend/artifacts/frozen_router_v3.json`), epsilon-greedy and LinUCB warm-started from it. v2 (word overlap) is kept for comparison; v1 is superseded (it counted context-window exclusions as failures).
+6. Evaluation: `data/evaluation_report_judge.json` and `data/evaluation_report_wordoverlap.json`.
+
+### First results (test split, 116 requests, judge correctness)
+
+| Policy | Quality | Cost $/request | Saving vs strong | Reward |
+|---|---|---|---|---|
+| only Qwen3.6-27B (strong) | 0.644 | 0.00988 | 0% | 0.473 |
+| only Qwen3.5-9B (cheap) | 0.647 | 0.00025 | 97.5% | 0.784 |
+| only gpt-oss-20b (local) | 0.666 | 0 | 100% | 0.774 |
+| frozen ridge | 0.653 | 0.00020 | 98.0% | 0.784 |
+| LinUCB | 0.641 | 0.00023 | 97.6% | 0.780 |
+| oracle | 0.718 | 0.00025 | 97.4% | 0.814 |
+
+What this says, honestly:
+
+- **The three models are equally correct on this workload** (judge means 0.70 / 0.71 / 0.70 over all answers). The 27B buys nothing, so it is almost never worth its price (reward-optimal on 0.9% of requests) and every router learns to avoid it. The cost-saving target is met, but "always use the cheap model" meets it too.
+- **The router does not beat the best single model on a stable workload.** The oracle shows real headroom (+0.07 quality from picking per request), but the 27 features do not predict which model will be right on a given request.
+- **Adaptation is where routing pays off:** when the cheap model's quality halves mid-stream, LinUCB keeps a reward of 0.735 and the bandit 0.694, against 0.625 for the frozen router.
+- **The metric changed a conclusion:** with word overlap, the local model looked significantly worse than the strong one (−0.047, CI excluding zero); with the correctness judge it is the most accurate of the three. Word overlap was penalising its formatting, not its answers.
+- Likely reasons for the flat quality: all models answer from the same BM25 excerpts, so when retrieval misses the evidence no model can answer (failure-injection items score 0.57–0.61 for all three); and a 27B open model is a much weaker "strong tier" than a frontier cloud model would be.
+
+### Cold start vs warm start (stream experiments, `evaluate.py`)
+
+| Learner | Reward, first eighth of the stream (warm / cold) | Cumulative regret (warm / cold) |
+|---|---|---|
+| LinUCB | 0.780 / 0.738 | 26.7 / 39.9 |
+| epsilon-greedy | 0.768 / 0.772 | 32.9 / 30.7 |
+
+Warm-starting from the frozen router clearly helps LinUCB (a third less regret). It makes no difference for epsilon-greedy here, because with three equally correct models a cold greedy learner falls back to the cheapest one, which is already near-optimal. After several passes both reach the same reward.
+
+### Privacy suite with Presidio and GLiNER (200 cases)
+
+| | Regex only (laptop) | Full detectors (server) |
+|---|---|---|
+| Unauthorized cloud dispatches | 0 / 150 | **0 / 150** |
+| Person names detected | 0 / 10 | **10 / 10** |
+| Detector recall / precision | | **1.000 / 0.865** |
+| Harmless requests over-blocked | 3 / 50 | **14 / 50** |
+
+All 14 over-blocks are "lookalikes": academic text with numbers. GLiNER labels token counts as card numbers, operation bounds as bank accounts, document counts as national IDs and dates as "OTHER". Over-blocking only keeps a request local, which is the safe direction. **Open decision:** let the checksum-validated regex be the only source for card, IBAN, CNIC, phone and email findings, and use the ML detectors only for what regex cannot find (names, addresses). That would remove most over-blocks; it trades away ML recall on unusually formatted identifiers.
+
+### Running the app on the server
+
+- Backend: `cd backend && .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000` (set `HF_HOME=D:\SmartRoute\hf-cache` first). Frontend: `cd frontend && npm run dev`, with `frontend/.env.local` = `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000`.
+- Routing policy: **frozen** (ridge v3). All three tiers are the local Ollama models; the claude-* entries stay disabled until keys exist.
+- Ollama: `OLLAMA_MODELS=D:\SmartRoute\ollama-models`, `OLLAMA_KEEP_ALIVE=30m`. Only one tier model fits in VRAM next to the backend's detectors, so switching tier reloads a model from D: (30-70 s). A loaded model answers in seconds.
+- Human ratings: `backend/data/ratings_sheet.csv` (108 blinded answers) is ready for two raters; `ratings_key.json` must not be shown to them.
+- **Trained weights are in git** (`backend/artifacts/`: `features.json` and `frozen_router_v1-3.json`; data stays out). On another machine: pull the three Ollama models, set `SMARTROUTE_EMBEDDINGS_ENABLED=true`, run `scripts/register_ollama_tiers.py --ctx-strong 8192`, `scripts/set_reward_calibration.py --c-ref 0.0075 --l-ref 10`, then `scripts/import_frozen_router.py artifacts/frozen_router_v3.json --warm-start`, and choose Frozen in Settings → Policy.
+
+### Fixed during the session
+
+- **Every request was confidential with the ML detectors on:** GLiNER read "SmartRoute" in the gateway's own system prompt as a person. The gate no longer scans the gateway's fixed prompt (`KIND_SYSTEM`); a caller's system prompt is still scanned. Regression test added.
+- **Ordinary questions were declined** ("no excerpts to answer from"): the excerpt rules are now only in the prompt when excerpts are attached (`SYSTEM_PROMPT_GENERAL` / `SYSTEM_PROMPT_WITH_EVIDENCE`). The prompt also tells the model that the privacy controls, not the model, decide where personal data goes, after a local model refused to draft a note containing the user's own CNIC.
+- **Privacy suite took 25+ minutes:** it reloaded GLiNER for each of the 200 cases. Now 27 seconds.
+
+GLiNER ran on the CPU (now GPU, `SMARTROUTE_PII_GLINER_DEVICE`); Presidio tried to download a missing spaCy model at runtime and could exit the process (now refused, fails closed); Ollama ignored `think`, so reasoning could consume the output budget; outcome collection reloaded a model on almost every call (`--by-model` with warm-up); `localhost` cost ~2.2 s per request on Windows (now `127.0.0.1`); two tests assumed the laptop. 118 tests pass.
 
 ## What was asked for
 
@@ -135,12 +219,14 @@ The jury prototype (`FYP Prototypes/SmartRoute_Prototype.html`), its screenshots
 
 ### On the server (see SETUP.md)
 
-1. Bring the stack up and fix whatever the first Docker build shows.
-2. Pull the local model and profile the hardware.
-3. Add cloud keys, correct the prices in the registry, send a test message to each model.
-4. Run the privacy suite with the full detector set and record precision and recall.
-5. Build the workload, fit features, run a small pilot, set C_ref and L_ref, freeze the protocol.
-6. Collect outcomes within the $55 benchmark allocation, train the frozen router, collect the blinded ratings, run the evaluation.
+Done on 26 November with local stand-in tiers: models pulled, workload built, features fitted, pilot and calibration, outcomes collected, judge run, frozen router trained, first evaluation. Still open:
+
+1. Decide on the detector over-blocking (see "Privacy suite" above), then rerun the suite.
+2. Add cloud keys, correct the prices, send a test message to each model; then collect outcomes for the real cloud tiers and retrain (a frozen router only knows the models it was trained on).
+3. Two raters fill `backend/data/ratings_sheet.csv`; `scripts/ratings.py import` it and report how far the judge agrees with them.
+4. Try a stronger retrieval step or more evidence per request, since retrieval looks like the bottleneck for every model.
+5. Docker, PostgreSQL and OCR need Linux: WSL2 or a Linux server.
+6. A click-through of the web interface with real models by a person.
 
 ### Still to build
 
