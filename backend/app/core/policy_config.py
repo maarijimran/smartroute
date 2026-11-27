@@ -40,9 +40,6 @@ class PolicyConfig(BaseModel):
 
     # ---- Access ----
     allow_self_registration: bool = False
-    allow_platform_credentials: bool = Field(
-        True, description="Users without their own cloud key may use keys set by the superadmin."
-    )
     users_may_pin_model: bool = True
 
     # ---- Routing ----

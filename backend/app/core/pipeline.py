@@ -79,6 +79,7 @@ from .routing.policies import (
     pacer_lambda,
 )
 from .tokens import count_messages, count_tokens
+from .tiers import tier_credential
 
 log = logging.getLogger(__name__)
 
@@ -350,28 +351,23 @@ def _local_summary_model(db: Session) -> ModelSpec | None:
     return None
 
 
-def resolve_credential(db: Session, user_id: str, vendor: str, cfg: PolicyConfig) -> CredentialSpec | str:
-    """The caller's own key wins; a platform key is used only if the policy allows it.
-    Returns a CredentialSpec or an exclusion reason."""
-    own = db.execute(
-        select(ProviderCredential)
-        .where(ProviderCredential.user_id == user_id, ProviderCredential.vendor == vendor)
-        .order_by(ProviderCredential.created_at.desc())
-    ).scalars().first()
-    row, scope = own, "user"
-    if row is None and cfg.allow_platform_credentials:
+def resolve_credential(db: Session, model: ModelEntry) -> CredentialSpec | str:
+    """The key the superadmin set for this model's tier. Users cannot add keys, so every
+    cloud call uses an organisation key. A shared key added for the same provider before
+    tiers existed is used as a fallback. Returns a CredentialSpec or an exclusion reason."""
+    row = tier_credential(db, model.tier)
+    if row is None or row.vendor != model.vendor:
         row = db.execute(
             select(ProviderCredential)
-            .where(ProviderCredential.user_id.is_(None), ProviderCredential.vendor == vendor)
+            .where(ProviderCredential.user_id.is_(None), ProviderCredential.vendor == model.vendor)
             .order_by(ProviderCredential.created_at.desc())
         ).scalars().first()
-        scope = "platform"
     if row is None:
         return "no_credential"
     key = decrypt_secret(row.encrypted_key)
     if key is None:
         return "credential_unreadable"
-    return CredentialSpec(api_key=key, base_url=row.base_url, api_version=row.api_version, scope=scope)
+    return CredentialSpec(api_key=key, base_url=row.base_url, api_version=row.api_version, scope="platform")
 
 
 # -------------------------------------------------------------------- evidence
@@ -453,7 +449,7 @@ def _eligibility(
             continue
         cred: CredentialSpec | None = None
         if vendor.needs_key:
-            resolved = resolve_credential(db, req.user_id, m.vendor, cfg)
+            resolved = resolve_credential(db, m)
             if isinstance(resolved, str):
                 exclusions[m.name] = resolved
                 continue

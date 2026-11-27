@@ -6,9 +6,10 @@ and API key:
     client = OpenAI(base_url="https://<your-server>/v1", api_key="sr-...")
     client.chat.completions.create(model="smartroute/auto", messages=[...])
 
-The developer connects their own paid cloud keys once (Keys page or
-POST /api/credentials). Every call then passes through the same privacy gate,
-eligibility filter and router as the chat interface.
+The cloud models and their provider keys are the organisation's: the superadmin sets
+the local, cheap and strong tiers (Settings -> Models, PUT /api/tiers/{tier}). A
+developer only needs a SmartRoute key. Every call passes through the same privacy
+gate, eligibility filter and router as the chat interface.
 
 Routing controls, all optional:
   model                      "smartroute/auto" (router decides) or a registry name

@@ -63,6 +63,17 @@ export interface Credential {
   created_at: string;
 }
 
+export type Tier = "local" | "cheap" | "strong";
+
+export interface TierSlot {
+  tier: Tier;
+  configured: boolean;
+  model: Model | null;
+  key_vendor: string | null;
+  key_hint: string | null;
+  api_version: string | null;
+}
+
 export interface ApiKey {
   id: string;
   name: string;
@@ -161,7 +172,6 @@ export interface Policy {
   exempt_person_in_public_documents: boolean;
   audit_preview_chars: number;
   allow_self_registration: boolean;
-  allow_platform_credentials: boolean;
   users_may_pin_model: boolean;
   routing_policy: "rules" | "frozen" | "bandit" | "linucb";
   reward_mode: "split" | "full";

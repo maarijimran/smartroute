@@ -1,56 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Badge, Button, Card, Field, Notice, PageHeader, Table, Toggle, errorText } from "@/components/ui";
+import { Badge, Button, Card, Field, Notice, PageHeader, Table, errorText } from "@/components/ui";
 import { API_URL, api, fmtTime } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
-import type { ApiKey, Credential, PrivacyMode, Vendor } from "@/lib/types";
+import type { ApiKey, PrivacyMode } from "@/lib/types";
 
 export default function KeysPage() {
-  const { user } = useAuth();
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [credentials, setCredentials] = useState<Credential[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<string | null>(null);
-
-  const [vendor, setVendor] = useState("anthropic");
-  const [label, setLabel] = useState("");
-  const [secret, setSecret] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiVersion, setApiVersion] = useState("");
-  const [platform, setPlatform] = useState(false);
 
   const [keyName, setKeyName] = useState("");
   const [keyMode, setKeyMode] = useState<PrivacyMode>("cloud_allowed");
 
   async function load() {
-    const [v, c, k] = await Promise.all([api<Vendor[]>("/api/vendors"), api<Credential[]>("/api/credentials"), api<ApiKey[]>("/api/keys")]);
-    setVendors(v.filter((x) => x.needs_key));
-    setCredentials(c);
-    setKeys(k);
+    setKeys(await api<ApiKey[]>("/api/keys"));
   }
   useEffect(() => {
     load().catch((e) => setError(errorText(e)));
   }, []);
-
-  const preset = vendors.find((v) => v.id === vendor);
-
-  async function addCredential(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api("/api/credentials", {
-        method: "POST",
-        json: { vendor, label, api_key: secret, base_url: baseUrl || null, api_version: apiVersion || null, platform },
-      });
-      setSecret("");
-      setLabel("");
-      await load();
-    } catch (err) {
-      setError(errorText(err));
-    }
-  }
 
   async function createKey(e: React.FormEvent) {
     e.preventDefault();
@@ -85,71 +53,6 @@ print(reply.model_extra["smartroute"])`;
     <div className="space-y-6">
       <PageHeader title="API" />
       {error && <Notice>{error}</Notice>}
-
-      <Card title="Provider keys">
-        <form onSubmit={addCredential} className="grid gap-4 md:grid-cols-2">
-          <Field label="Provider">
-            <select className="input" value={vendor} onChange={(e) => setVendor(e.target.value)}>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Label">
-            <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} />
-          </Field>
-          <Field label="Key">
-            <input className="input" type="password" required minLength={4} value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
-          </Field>
-          <Field label="Endpoint">
-            <input
-              className="input"
-              value={baseUrl}
-              required={preset?.needs_base_url}
-              placeholder={preset?.default_base_url ?? "https://<resource>.openai.azure.com"}
-              onChange={(e) => setBaseUrl(e.target.value)}
-            />
-          </Field>
-          {vendor === "azure_openai" && (
-            <Field label="Version">
-              <input className="input" value={apiVersion} placeholder="2024-10-21" onChange={(e) => setApiVersion(e.target.value)} />
-            </Field>
-          )}
-          <div className="flex items-center gap-6 md:col-span-2">
-            {user?.role === "superadmin" && <Toggle checked={platform} onChange={setPlatform} label="Shared" />}
-            <Button type="submit" className="ml-auto">
-              Save
-            </Button>
-          </div>
-        </form>
-        <div className="mt-4">
-          <Table head={["Provider", "Label", "Key", "Endpoint", "Scope", "Added", ""]} empty={!credentials.length}>
-            {credentials.map((c) => (
-              <tr key={c.id}>
-                <td className="td font-medium text-slate-900">{vendors.find((v) => v.id === c.vendor)?.label ?? c.vendor}</td>
-                <td className="td">{c.label || "–"}</td>
-                <td className="td font-mono">••••{c.key_hint}</td>
-                <td className="td">{c.base_url || "Default"}</td>
-                <td className="td">{c.user_id ? <Badge>Personal</Badge> : <Badge tone="blue">Shared</Badge>}</td>
-                <td className="td">{fmtTime(c.created_at)}</td>
-                <td className="td text-right">
-                  <Button
-                    variant="danger"
-                    onClick={async () => {
-                      await api(`/api/credentials/${c.id}`, { method: "DELETE" });
-                      await load();
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </Table>
-        </div>
-      </Card>
 
       <Card title="API keys">
         <form onSubmit={createKey} className="grid gap-4 md:grid-cols-[1fr_200px_auto] md:items-end">

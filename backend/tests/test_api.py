@@ -81,21 +81,25 @@ def test_self_registration_follows_policy(client, root):
     assert client.post("/api/auth/register", json=body).json()["user"]["role"] == "user"
 
 
-def test_registry_and_keys_are_protected(client, root):
+def test_tiers_and_keys_are_superadmin_only(client, root):
     user = make_user(client, root)
-    new_model = {"name": "x-model", "vendor": "openai", "model_id": "x", "tier": "cheap"}
-    assert client.post("/api/models", json=new_model, headers=user).status_code == 403
-    assert client.post("/api/models", json=new_model, headers=root).status_code == 201
-    # A cloud vendor can never be registered as local (that would bypass the gate).
-    sneaky = {**new_model, "name": "sneaky", "is_local": True}
-    assert client.post("/api/models", json=sneaky, headers=root).status_code == 422
+    admin = make_user(client, root, email="admin@test.local", role="admin")
+    cheap = {"vendor": "openai", "model_id": "gpt-x-mini", "api_key": "sk-test-abcdef123456"}
+    for headers in (user, admin):
+        assert client.get("/api/tiers", headers=headers).status_code == 403
+        assert client.put("/api/tiers/cheap", json=cheap, headers=headers).status_code == 403
+        assert client.get("/api/credentials", headers=headers).status_code == 403
+        assert client.post("/api/credentials", json={"vendor": "openai", "api_key": "sk-x-123456"}, headers=headers).status_code in (404, 405)
+        assert client.post("/api/models", json={"name": "x", "vendor": "openai", "model_id": "x", "tier": "cheap"}, headers=headers).status_code in (404, 405)
 
-    cred = {"vendor": "openai", "api_key": "sk-test-abcdef123456", "label": "mine"}
-    assert client.post("/api/credentials", json={**cred, "platform": True}, headers=user).status_code == 403
-    created = client.post("/api/credentials", json=cred, headers=user)
-    assert created.status_code == 201 and created.json()["key_hint"] == "3456"
-    assert "sk-test" not in client.get("/api/credentials", headers=user).text
-    assert client.get("/api/credentials", headers=root).json() == []  # keys are private to their owner
+    r = client.put("/api/tiers/cheap", json=cheap, headers=root)
+    assert r.status_code == 200 and r.json()["key_hint"] == "3456" and r.json()["model"]["enabled"]
+    assert "sk-test" not in client.get("/api/tiers", headers=root).text
+    assert "sk-test" not in client.get("/api/credentials", headers=root).text
+    # A cloud model can never take the local tier (that would bypass the privacy gate).
+    assert client.put("/api/tiers/local", json={**cheap, "vendor": "openai"}, headers=root).status_code == 422
+    # A new provider needs its key.
+    assert client.put("/api/tiers/strong", json={"vendor": "anthropic", "model_id": "claude-x"}, headers=root).status_code == 422
     assert client.get("/api/audit/confidential", headers=user).status_code == 403
 
 
