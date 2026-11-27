@@ -148,3 +148,30 @@ def test_enforcement_matrix():
     off = PolicyConfig(cloud_enabled=False, allow_confidential_cloud_default=True)
     assert _decide(off, sensitive=True, override=True, consent=True).reason == "institutional_policy"
     assert _decide(off).reason == "institutional_policy"
+
+
+class _FakeGliner(PrivacyScanner):
+    """Replays GLiNER's PERSON output measured on Kaggle (27 November), without the model."""
+
+    MEASURED = {"hello": 0.76, "hi": 0.9, "good morning": 0.7, "thanks sir": 0.8,
+                "Aman Malik": 0.96, "aman malik": 1.0, "Mr Khan": 0.9, "Grace": 0.9}
+
+    def _gliner_findings(self, text):
+        out = []
+        for span, score in self.MEASURED.items():
+            i = text.find(span)
+            if i >= 0:
+                out.append(Finding("PERSON", i, i + len(span), "gliner", score))
+        return out
+
+
+@pytest.mark.parametrize("text", ["hello", "hi", "hello how are you", "Hi!", "good morning", "thanks sir, that helped"])
+def test_greetings_are_not_names(text):
+    fake = _FakeGliner(Settings(pii_presidio=False, pii_gliner=True))
+    assert fake.scan(text).findings == []
+
+
+@pytest.mark.parametrize("text", ["My name is Aman Malik", "aman malik called me today", "hello, Mr Khan", "Grace sent the file"])
+def test_real_names_are_still_detected(text):
+    fake = _FakeGliner(Settings(pii_presidio=False, pii_gliner=True))
+    assert "PERSON" in fake.scan(text).types

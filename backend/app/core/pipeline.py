@@ -289,6 +289,8 @@ class Outcome:
     history_messages: int = 0  # earlier messages in the conversation
     history_sent: int = 0  # of those, sent verbatim
     cache_read_tokens: int = 0  # input tokens billed at the provider's cache rate
+    # How each eligible model scored for the learned policies (quality, cost and speed terms).
+    scores: dict[str, dict] = field(default_factory=dict)
 
     def public(self) -> dict:
         """Metadata shown to the caller (everything except the answer text)."""
@@ -790,6 +792,7 @@ def _base_outcome(plan: Plan, status: str) -> Outcome:
         explanation=d.explanation if d else (plan.abstain_reason or ""),
         propensity=d.propensity if d else None,
         explored=d.explored if d else False,
+        scores=dict(d.breakdown) if d else {},
         routing_overhead_ms=round(plan.routing_overhead_ms, 2),
         notices=list(plan.notices),
         sources=[

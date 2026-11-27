@@ -144,3 +144,27 @@ def test_feature_vector_keeps_its_constant():
     assert len(x) == fx.dim == len(names) == 11
     assert x[names.index("constant")] == 1.0
     assert x[names.index("task_doc_qa")] == 1.0 and x[names.index("task_summary")] == 0.0
+
+
+def test_score_breakdown_explains_every_learned_decision():
+    """The route details show quality + cost + speed (+ LinUCB bonus and pacer) per model;
+    the parts must add up to the score that decided the route."""
+    cfg = PolicyConfig()
+    arms = ArmSet(1)
+    x = np.array([1.0])
+    for name, q in (("local", 0.70), ("cheap", 0.72), ("strong", 0.74)):
+        for _ in range(50):
+            arms.arm(name).update(x, q)
+    decisions = [
+        FrozenPolicy().select(x, CANDS, arms, cfg),
+        EpsilonGreedyPolicy().select(x, CANDS, arms, cfg, np.random.default_rng(0)),
+        LinUCBPolicy().select(x, CANDS, arms, cfg, pacer_lambda=0.5),
+    ]
+    for d in decisions:
+        assert set(d.breakdown) == {c.name for c in CANDS}
+        for name, p in d.breakdown.items():
+            parts = p["quality"] + p["cost"] + p["speed"] + p.get("bonus", 0.0) + p.get("pacer", 0.0)
+            assert parts == pytest.approx(p["total"], abs=1e-3)
+            assert p["total"] == pytest.approx(d.scores[name], abs=1e-4)
+            assert p["tier"] == name
+    assert decisions[0].breakdown["local"]["cost"] == pytest.approx(cfg.weights.cost)  # free model: full cost score

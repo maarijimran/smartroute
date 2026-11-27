@@ -45,6 +45,8 @@ class Decision:
     explored: bool
     explanation: str
     scores: dict[str, float] = field(default_factory=dict)
+    # Per candidate: how its score was built (shown in the chat's route details).
+    breakdown: dict[str, dict] = field(default_factory=dict)
 
 
 def epsilon(cfg: PolicyConfig, n_scored: int) -> float:
@@ -53,16 +55,29 @@ def epsilon(cfg: PolicyConfig, n_scored: int) -> float:
     return cfg.eps_start + (cfg.eps_end - cfg.eps_start) * frac
 
 
-def utility(cfg: PolicyConfig, predicted: float, cand: Candidate) -> float:
-    """split mode: `predicted` is learned quality; cost is calculated from tokens and
+def utility_parts(cfg: PolicyConfig, predicted: float, cand: Candidate) -> dict:
+    """The utility of one candidate and the weighted terms it is made of.
+
+    split mode: `predicted` is learned quality; cost is calculated from tokens and
     prices and latency is measured, so a price change takes effect without relearning.
     full mode: `predicted` is the learned reward itself."""
+    parts = {"tier": cand.tier, "est_cost_usd": cand.est_cost_usd, "latency_s": cand.latency_s}
     if cfg.reward_mode == "full":
-        return predicted
+        return {**parts, "predicted_reward": predicted, "total": predicted}
     w = cfg.weights
-    return w.quality * predicted + w.cost * cost_term(cand.est_cost_usd, cfg) + w.latency * latency_term(
-        cand.latency_s, cfg
-    )
+    quality = w.quality * predicted
+    cost = w.cost * cost_term(cand.est_cost_usd, cfg)
+    speed = w.latency * latency_term(cand.latency_s, cfg)
+    return {**parts, "predicted_quality": predicted, "quality": quality, "cost": cost, "speed": speed,
+            "total": quality + cost + speed}
+
+
+def utility(cfg: PolicyConfig, predicted: float, cand: Candidate) -> float:
+    return utility_parts(cfg, predicted, cand)["total"]
+
+
+def _rounded(parts: dict) -> dict:
+    return {k: (round(v, 4) if isinstance(v, float) else v) for k, v in parts.items()}
 
 
 def _argmax(scores: dict[str, float]) -> str:
@@ -134,9 +149,11 @@ class FrozenPolicy:
     name = "frozen"
 
     def select(self, x: np.ndarray, candidates: list[Candidate], arms: ArmSet, cfg: PolicyConfig) -> Decision:
-        scores = {c.name: utility(cfg, arms.arm(c.name).predict(x), c) for c in candidates}
+        parts = {c.name: utility_parts(cfg, arms.arm(c.name).predict(x), c) for c in candidates}
+        scores = {name: p["total"] for name, p in parts.items()}
         best = _argmax(scores)
-        return Decision(best, 1.0, False, f"frozen router: highest predicted utility {scores[best]:.3f}", scores)
+        return Decision(best, 1.0, False, f"frozen router: highest predicted utility {scores[best]:.3f}", scores,
+                        {n: _rounded(p) for n, p in parts.items()})
 
 
 class EpsilonGreedyPolicy:
@@ -152,7 +169,8 @@ class EpsilonGreedyPolicy:
         cfg: PolicyConfig,
         rng: np.random.Generator,
     ) -> Decision:
-        scores = {c.name: utility(cfg, arms.arm(c.name).predict(x), c) for c in candidates}
+        parts = {c.name: utility_parts(cfg, arms.arm(c.name).predict(x), c) for c in candidates}
+        scores = {name: p["total"] for name, p in parts.items()}
         best = _argmax(scores)
         k = len(candidates)
         eps = epsilon(cfg, arms.n_scored) if k > 1 else 0.0
@@ -162,7 +180,8 @@ class EpsilonGreedyPolicy:
         # the greedy arm can also be drawn by the uniform exploration step.
         propensity = (1 - eps) + eps / k if arm == best else eps / k
         how = f"explored (epsilon={eps:.3f})" if explored else f"greedy (epsilon={eps:.3f})"
-        return Decision(arm, float(propensity), explored, f"bandit {how}; utility {scores[arm]:.3f}", scores)
+        return Decision(arm, float(propensity), explored, f"bandit {how}; utility {scores[arm]:.3f}", scores,
+                        {n: _rounded(p) for n, p in parts.items()})
 
 
 class LinUCBPolicy:
@@ -181,15 +200,18 @@ class LinUCBPolicy:
         cfg: PolicyConfig,
         pacer_lambda: float = 0.0,
     ) -> Decision:
-        scores = {}
+        scores, breakdown = {}, {}
         for c in candidates:
             arm = arms.arm(c.name)
             bonus = cfg.linucb_alpha * arm.uncertainty(x)
             penalty = pacer_lambda * min(c.est_cost_usd / cfg.c_ref_usd, 1.0)
-            scores[c.name] = utility(cfg, arm.predict(x), c) + bonus - penalty
+            parts = utility_parts(cfg, arm.predict(x), c)
+            scores[c.name] = parts["total"] + bonus - penalty
+            breakdown[c.name] = _rounded({**parts, "bonus": bonus, "pacer": -penalty, "total": scores[c.name]})
         best = _argmax(scores)
         return Decision(
-            best, 1.0, False, f"LinUCB optimistic score {scores[best]:.3f} (pacer {pacer_lambda:.2f})", scores
+            best, 1.0, False, f"LinUCB optimistic score {scores[best]:.3f} (pacer {pacer_lambda:.2f})", scores,
+            breakdown,
         )
 
 

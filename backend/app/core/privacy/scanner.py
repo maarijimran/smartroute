@@ -231,12 +231,35 @@ class PrivacyScanner:
         except Exception as exc:  # fail closed on ANY detector problem
             log.exception("privacy scanner failure")
             return ScanResult(failed=True, failure_reason=f"{type(exc).__name__}: {exc}"[:200])
-        findings = [f for f in findings if not _is_cited_author(text, f)]
+        findings = [f for f in findings if not _is_cited_author(text, f) and not _is_not_a_name(text, f)]
         return ScanResult(findings=_dedupe(findings))
 
 
 def _is_cited_author(text: str, f: Finding) -> bool:
     return f.type == "PERSON" and bool(_CITATION_AFTER.match(text[f.end : f.end + 40]))
+
+
+# Words that are never a person's name on their own. GLiNER labels short greetings as
+# PERSON with high confidence (measured on Kaggle: "hi" 0.90, "hello" 0.76, while a real
+# name scored 0.96), so a score threshold cannot separate them; a PERSON span made only
+# of these words is dropped instead. A span with any other word ("Aman", "Mr Khan") is kept.
+_NOT_A_NAME = frozenset("""
+hi hello hey hiya howdy yo greetings salam salaam assalam assalamualaikum aoa
+thanks thank thx ty bye goodbye cheers welcome ok okay yes no yeah please sorry
+good morning afternoon evening night day
+sir madam maam ma'am dear mr mrs ms miss dr prof professor teacher student
+team everyone all guys folks friend friends buddy bro sis
+i me my you your he him his she her they them their we us our it someone somebody anyone nobody
+user assistant bot chatbot model smartroute
+""".split())
+_WORD = re.compile(r"[a-z']+")
+
+
+def _is_not_a_name(text: str, f: Finding) -> bool:
+    if f.type != "PERSON":
+        return False
+    words = _WORD.findall(text[f.start : f.end].lower())
+    return bool(words) and all(w in _NOT_A_NAME for w in words)
 
 
 def _dedupe(findings: list[Finding]) -> list[Finding]:

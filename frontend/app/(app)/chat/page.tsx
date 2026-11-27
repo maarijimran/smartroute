@@ -20,11 +20,12 @@ import {
   TrashIcon,
   UploadIcon,
 } from "@/components/icons";
+import { Markdown } from "@/components/markdown";
 import { Badge, Button, Notice, Spinner, Switch, errorText, usePopover } from "@/components/ui";
 import { api, fmtMs, fmtUsd, streamChat } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useChats } from "@/lib/chats";
-import type { Doc, Message, Model, PrivacyMode, RouteMeta, Session } from "@/lib/types";
+import type { Doc, Message, Model, PrivacyMode, RouteMeta, ScoreParts, Session } from "@/lib/types";
 
 const DIMENSIONS = ["correctness", "relevance", "completeness", "usefulness"] as const;
 const HISTORY_MODES: Record<string, string> = { none: "None", full: "Full", summary: "Summary", relevant_turns: "Relevant" };
@@ -686,8 +687,8 @@ function MessageView({ message }: { message: Message }) {
           <span className="whitespace-pre-wrap">{message.content || meta.error || "No answer"}</span>
         </div>
       ) : (
-        <div className="whitespace-pre-wrap font-serif text-[16.5px] leading-[1.7] text-slate-900">
-          {message.content}
+        <div className="font-serif text-[16.5px] leading-[1.7] text-slate-900">
+          <Markdown text={message.content} />
           {status === "streaming" && <span className="ml-0.5 inline-block h-4 w-2 animate-pulse rounded-sm bg-brand-600 align-middle" />}
         </div>
       )}
@@ -757,15 +758,75 @@ function RouteDetails({ meta }: { meta: Partial<RouteMeta> }) {
   rows.push(["Timing", `First token ${fmtMs(meta.ttft_ms)} · routing ${fmtMs(meta.routing_overhead_ms)}${(meta.cache_read_tokens ?? 0) > 0 ? ` · cached ${meta.cache_read_tokens}` : ""}`]);
   if (meta.notices?.length) rows.push(["Notes", meta.notices.join(" ")]);
   if (meta.error) rows.push(["Error", meta.error]);
+  const scored = Object.entries(meta.scores ?? {}).sort((a, b) => b[1].total - a[1].total);
+  if (scored.length) rows.splice(1, 0, ["Scores", <ScoreTable key="scores" scored={scored} chosen={meta.model ?? null} />]);
   return (
     <dl className="mt-2 grid grid-cols-[84px_1fr] gap-x-3 gap-y-1.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
       {rows.map(([k, v]) => (
         <div key={k} className="contents">
           <dt className="font-medium text-slate-800">{k}</dt>
-          <dd>{v}</dd>
+          <dd className="min-w-0">{v}</dd>
         </div>
       ))}
     </dl>
+  );
+}
+
+const TIER_NAME: Record<string, string> = { local: "Local", cheap: "Cheap", strong: "Strong" };
+const f3 = (v: number | undefined) => (v === undefined ? "–" : v.toFixed(3));
+
+/* Each eligible model's score and the terms it is made of: quality = 0.5 x predicted
+   quality, cost and speed = their weighted scores, plus LinUCB's exploration bonus and
+   budget pacer. The highest total wins (except when epsilon-greedy explores). */
+function ScoreTable({ scored, chosen }: { scored: [string, ScoreParts][]; chosen: string | null }) {
+  const full = scored.some(([, p]) => p.predicted_reward !== undefined);
+  const linucb = scored.some(([, p]) => p.bonus !== undefined);
+  const head = full ? ["Model", "Score"] : ["Model", "Score", "Quality", "Cost", "Speed", ...(linucb ? ["Bonus", "Pacer"] : [])];
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left tabular-nums">
+        <thead>
+          <tr className="text-slate-500">
+            {head.map((h) => (
+              <th key={h} className="pb-1 pr-3 font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {scored.map(([name, p]) => {
+            const won = name === chosen;
+            return (
+              <tr key={name} className={won ? "font-semibold text-slate-900" : ""}>
+                <td className="whitespace-nowrap py-0.5 pr-3">
+                  {TIER_NAME[p.tier] ?? p.tier}
+                  {name !== p.tier && <span className="ml-1 font-normal text-slate-500">{name}</span>}
+                  {won && <span className="ml-1.5 text-brand-700">✓</span>}
+                </td>
+                <td className="py-0.5 pr-3">{f3(p.total)}</td>
+                {!full && (
+                  <>
+                    <td className="py-0.5 pr-3" title={`predicted quality ${f3(p.predicted_quality)}`}>{f3(p.quality)}</td>
+                    <td className="py-0.5 pr-3" title={`estimated cost $${p.est_cost_usd.toFixed(5)}`}>{f3(p.cost)}</td>
+                    <td className="py-0.5 pr-3" title={`expected latency ${p.latency_s.toFixed(1)} s`}>{f3(p.speed)}</td>
+                    {linucb && (
+                      <>
+                        <td className="py-0.5 pr-3">{f3(p.bonus)}</td>
+                        <td className="py-0.5 pr-3">{f3(p.pacer)}</td>
+                      </>
+                    )}
+                  </>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="mt-1 text-slate-500">
+        {full ? "Learned reward per model." : `Score = quality + cost + speed${linucb ? " + bonus + pacer" : ""}. Higher wins.`}
+      </p>
+    </div>
   );
 }
 

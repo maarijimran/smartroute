@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from app.core.providers.mock import MockProvider
 
 from .conftest import make_user
@@ -262,3 +264,17 @@ def test_analytics_summary(client, root):
     assert client.get("/api/analytics/summary?scope=all", headers=user).status_code == 403
     assert client.get("/api/analytics/summary?scope=all", headers=root).json()["measured"]["requests"] == 2
     assert len(client.get("/api/analytics/events", headers=user).json()) == 2
+
+
+def test_route_details_include_every_models_score(client, root):
+    policy = client.get("/api/policy", headers=root).json()
+    policy["routing_policy"] = "bandit"
+    client.put("/api/policy", json=policy, headers=root)
+    session = client.post("/api/chat/sessions", json={}, headers=root).json()
+    r = client.post(f"/api/chat/sessions/{session['id']}/messages", json={"content": "Write a haiku about rain."}, headers=root)
+    final = [e for e in sse_events(r) if e.get("type") == "done"][-1]
+    meta = final["meta"]
+    scores = meta["scores"]
+    assert set(scores) == set(meta["eligible"]) and meta["model"] in scores
+    for parts in scores.values():
+        assert parts["quality"] + parts["cost"] + parts["speed"] == pytest.approx(parts["total"], abs=1e-3)

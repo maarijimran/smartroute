@@ -148,6 +148,22 @@ export interface RouteMeta {
   history_messages: number;
   history_sent: number;
   cache_read_tokens: number;
+  scores: Record<string, ScoreParts>;
+}
+
+/* How one eligible model scored for a learned routing policy. */
+export interface ScoreParts {
+  tier: string;
+  total: number;
+  quality?: number;
+  cost?: number;
+  speed?: number;
+  bonus?: number;
+  pacer?: number;
+  predicted_quality?: number;
+  predicted_reward?: number;
+  est_cost_usd: number;
+  latency_s: number;
 }
 
 export interface Message {
