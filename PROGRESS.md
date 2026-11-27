@@ -1,6 +1,6 @@
 # SmartRoute: work log and remaining work
 
-Last updated: 26 November 2026. Written for the three team members, including whoever was not in the build session.
+Last updated: 27 November 2026 (server session of 26 November; documentation aligned on 27 November). Written for the three team members, including whoever was not in the build session.
 
 ## Where things stand
 
@@ -77,7 +77,7 @@ All 14 over-blocks are "lookalikes": academic text with numbers. GLiNER labels t
 ### Running the app on the server
 
 - Backend: `cd backend && .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000` (set `HF_HOME=D:\SmartRoute\hf-cache` first). Frontend: `cd frontend && npm run dev`, with `frontend/.env.local` = `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000`.
-- Routing policy: **frozen** (ridge v3). All three tiers are the local Ollama models; the claude-* entries stay disabled until keys exist.
+- Routing policy: **frozen** (ridge v3). All three tiers are the local Ollama models until cloud keys exist.
 - Ollama: `OLLAMA_MODELS=D:\SmartRoute\ollama-models`, `OLLAMA_KEEP_ALIVE=30m`. Only one tier model fits in VRAM next to the backend's detectors, so switching tier reloads a model from D: (30-70 s). A loaded model answers in seconds.
 - Human ratings: `backend/data/ratings_sheet.csv` (108 blinded answers) is ready for two raters; `ratings_key.json` must not be shown to them.
 - **Trained weights are in git** (`backend/artifacts/`: `features.json` and `frozen_router_v1-3.json`; data stays out). On another machine: pull the three Ollama models, set `SMARTROUTE_EMBEDDINGS_ENABLED=true`, run `scripts/register_ollama_tiers.py --ctx-strong 8192`, `scripts/set_reward_calibration.py --c-ref 0.0075 --l-ref 10`, then `scripts/import_frozen_router.py artifacts/frozen_router_v3.json --warm-start`, and choose Frozen in Settings → Policy.
@@ -90,11 +90,23 @@ All 14 over-blocks are "lookalikes": academic text with numbers. GLiNER labels t
 
 GLiNER ran on the CPU (now GPU, `SMARTROUTE_PII_GLINER_DEVICE`); Presidio tried to download a missing spaCy model at runtime and could exit the process (now refused, fails closed); Ollama ignored `think`, so reasoning could consume the output budget; outcome collection reloaded a model on almost every call (`--by-model` with warm-up); `localhost` cost ~2.2 s per request on Windows (now `127.0.0.1`); two tests assumed the laptop. 118 tests pass.
 
+## Tier slots (27 November)
+
+Asked for: no seeded Claude models; the superadmin alone chooses the provider, model and key for the local, cheap and strong tiers; users cannot add, change or remove keys or models; and when the superadmin changes a tier's model, routing continues from that tier's trained weights instead of starting from scratch.
+
+- **Slots.** `app/core/tiers.py` keeps exactly one registry entry per tier. `PUT /api/tiers/{tier}` (superadmin only) edits that entry in place: provider, model, endpoint, context, prices and key. The entry keeps its name, and the frozen router, epsilon-greedy and LinUCB store their weights under that name, so the new model inherits the tier's weights. Health, latency and the response cache are reset; the change is logged in the policy history with key hints only. Enabling a second model in a tier is refused.
+- **Keys.** One encrypted key per tier, set with the tier. Personal keys are no longer read, the `/api/credentials` endpoints are superadmin-only (list and delete), and the "Shared keys" policy switch is gone.
+- **Seeds.** Fresh installs get `local-default` (Ollama) and unset `cheap` and `strong` slots. The old disabled `claude-haiku` and `claude-opus` rows are removed at start-up; the server keeps its `sim-cheap` and `sim-strong` slots and their weights.
+- **Scripts.** `register_ollama_tiers.py` uses the same tier function. The artifacts now carry a `tiers` map, so `import_frozen_router.py` attaches the weights to whatever the slots are called on a machine. `train_frozen.py` writes that map. `collect_outcomes.py` accepts `local cheap strong` and records each answer's provider model ID.
+- **Interface.** Settings → Models shows one card per tier. Settings → API keeps only the SmartRoute keys.
+- **Verified on the laptop:** 126 backend tests pass (7 new in `tests/test_tiers.py`), the frontend type-checks and builds, and the Models page was checked in a browser in both themes. Switching the cheap tier from OpenAI to Gemini through the API kept its slot and required the new key. No real provider was called.
+- **Caution:** the inherited weights were learned on the stand-in models. They are a starting point, not a measurement of the new model. Collect outcomes for it into a new file and retrain before reporting results for it.
+
 ## What was asked for
 
 1. Follow the research guide and build the whole project.
 2. Code only on the laptop: no model downloads, no datasets, no model runs. Link everything to download later in SETUP.md.
-3. Two phases: a chat interface, then our own API that a developer calls from their backend after connecting their paid cloud keys.
+3. Two phases: a chat interface, then our own API that a developer calls from their backend. (Originally with their own paid cloud keys; since 27 November only the superadmin sets models and keys, see "Tier slots".)
 4. Role-based access control. The superadmin decides whether users may send confidential queries to cloud APIs.
 5. Log confidential queries so they can be traced.
 6. Industry-grade, to run on our own server.
@@ -113,7 +125,7 @@ Defaults chosen without asking, all changeable in the Policy page:
 - Confidential content may not go to cloud unless the superadmin permits the user, and a permitted user must still consent on each request.
 - Uploaded documents are labelled confidential unless the user declares them public.
 - The router learns answer quality and calculates cost and latency ("split" mode, from the research guide). The proposal's original form, learning the whole reward, is available as "full" mode. This is a real change from the proposal and should be declared in the evaluation protocol.
-- Seeded cloud models are Claude Haiku 5.5 (cheap) and Claude Opus 5.5 (strong). Any provider's models can replace them.
+- No cloud model is seeded (the Claude Haiku and Opus seeds were removed on 27 November). The superadmin sets the cheap and strong tiers.
 
 ## What was built
 
@@ -180,7 +192,7 @@ The jury prototype (`FYP Prototypes/SmartRoute_Prototype.html`), its screenshots
 
 ### Deployment
 
-`docker-compose.yml` (PostgreSQL, Ollama with GPU, backend, frontend), two Dockerfiles, environment templates.
+`docker-compose.yml` (PostgreSQL, Ollama with GPU, the vLLM OCR server, backend, frontend), two Dockerfiles, environment templates. Not built yet: the GPU server runs Windows without Docker (see SETUP.md section 3a for how it runs there).
 
 ## How the main requirements are met
 
@@ -188,11 +200,11 @@ The jury prototype (`FYP Prototypes/SmartRoute_Prototype.html`), its screenshots
 - **Tracking.** Every request that carries confidential content writes an audit row before anything is dispatched: user, source (chat or API), why it counted as confidential, the decision and its reason, whether consent was given, the destination model, and whether the content left the server.
 - **No silent cloud fallback.** If no permitted model can answer, the request is refused with an explanation. The API returns HTTP 403 with `privacy_policy_block`.
 - **Privacy outside the learner.** Models are removed by the eligibility filter before any policy runs, and the outbound check runs again on the exact payload before a cloud call. Exploration and retries pick only from what is left.
-- **Bring your own key.** Developers store their own cloud keys (encrypted). A key created as local-only can never reach cloud, whatever the request asks.
+- **Organisation keys only.** The superadmin sets one provider key per tier (stored encrypted); users and developers cannot add keys. A SmartRoute key created as local-only can never reach cloud, whatever the request asks.
 
-## What was verified on the laptop
+## What was verified on the laptop (before the server run)
 
-- 108 automated tests pass.
+- 108 automated tests passed at the time (126 now).
 - The server was started for real and called over HTTP: login, model list, router API with and without a CNIC, streaming, audit log.
 - Privacy suite with regex detectors only: 0 enforcement failures in 150 cases that must be blocked; all 80 structured identifiers detected; 3 of 50 harmless lookalikes wrongly blocked.
 - The evaluation script runs end to end on synthetic outcomes.
@@ -200,20 +212,23 @@ The jury prototype (`FYP Prototypes/SmartRoute_Prototype.html`), its screenshots
 
 ## Findings worth acting on
 
-1. **Names need the ML detectors.** With regex only, 0 of 10 person-name cases were detected and all 10 would have gone to cloud. Presidio and GLiNER must be enabled on the server, and their recall measured there.
-2. **C_ref must be calibrated.** With the default $0.002 and a strong model costing about $0.01 per request, the strong model always scores zero on cost and no router ever chooses it. Set C_ref near the strong model's typical request cost from pilot data.
-3. **The quality target constrains the reward weights.** On the synthetic data even the oracle missed the "lower bound above -0.05" target, because the reward itself trades quality for cost. Synthetic numbers prove nothing about real models, but the mechanism is real: choose the weights on the validation split so the target is reachable, then freeze them.
-4. **Exploration schedule versus dataset size.** The proposal decays epsilon over 1,000 scored decisions, but the workload has 600 requests. The replay code supports several passes over the stream; otherwise shorten the schedule.
+1. **Names need the ML detectors.** With regex only, 0 of 10 person-name cases were detected and all 10 would have gone to cloud. *Resolved on the server:* with Presidio and GLiNER, 10 of 10 were detected. The cost is over-blocking (14 of 50 lookalikes), which is now the open detector decision.
+2. **C_ref must be calibrated.** With the default $0.002 and a strong model costing about $0.01 per request, the strong model always scores zero on cost and no router ever chooses it. *Resolved for the stand-in tiers:* the pilot set C_ref = $0.0075 and L_ref = 10 s. Recalibrate when real cloud tiers are added.
+3. **The quality target constrains the reward weights.** On the synthetic data even the oracle missed the "lower bound above -0.05" target, because the reward itself trades quality for cost. Choose the weights on the validation split so the target is reachable, then freeze them. Still relevant once real cloud tiers exist; with the stand-ins the three models are about equally correct.
+4. **Exploration schedule versus dataset size.** The proposal decays epsilon over 1,000 scored decisions, but the workload has 588 requests. The stream experiments in `evaluate.py` make several passes over the test split (`--epochs`, default 8); state this in the protocol.
 5. **A CNIC written without dashes at the end of a sentence was missed** by the first version of the regex. The privacy suite caught it and it is fixed. This is the kind of error the suite exists to find, so run it after every detector change.
+6. **The quality metric matters.** Word overlap made the local model look significantly worse than the strong one; the correctness judge says it is the most accurate. Use the judge-trained router (v3) and judge-based numbers, and check the judge against the human ratings.
 
 ## Not verified yet
 
-- Any call to a real model: Ollama, Claude, OpenAI-compatible endpoints, Gemini, Azure. The adapters were checked against the installed SDK's signatures only.
-- Presidio, GLiNER and the embedding features. Their code paths have never executed.
-- `scripts/build_workload.py` against the real QASPER layout.
+Verified on the server since the laptop phase: the Ollama adapter with real models, Presidio, GLiNER, the embedding features, `scripts/build_workload.py` against the real QASPER layout, outcome collection, the judge, frozen training and the evaluation. Still not verified:
+
+- Any cloud API call: Claude, OpenAI-compatible endpoints, Gemini, Azure. These adapters were checked against the installed SDKs' signatures only.
+- The OCR model through vLLM (weights downloaded; needs Linux).
 - Docker images and `docker-compose.yml`.
-- PostgreSQL. Tests use SQLite.
+- PostgreSQL. Tests and the server both use SQLite.
 - The web interface by a person. A headless browser on the laptop clicked through new chat, sending, menus, the sidebar toggle, Settings and redirects; a full manual pass with real models is still needed.
+- How far the judge agrees with human raters.
 
 ## Remaining work
 
@@ -237,7 +252,7 @@ Done on 26 November with local stand-in tiers: models pulled, workload built, fe
 | Database migrations (Alembic) | Needed for a real deployment | Tables are created at startup today, so a schema change needs a manual migration |
 | NVIDIA complexity classifier as a feature | Could | A keyword and length heuristic is used now |
 | Batch API for benchmark generation | Should | Would halve benchmark cost on providers that offer it |
-| Local judge model or NLI faithfulness check | Could | Automatic scores are lexical overlap only |
+| Local judge model or NLI faithfulness check | Could | Done for correctness: `gemma4:26b` checklist judge (`app/evaluation/judge.py`). A faithfulness check against the excerpts is not built |
 | LLMLingua-2 compression, semantic cache | Could | Exact cache and output caps are in place |
 | Mask-then-send with consent | Could (stretch) | Not started |
 | Shared rate limiter and learner state for several workers | Later | Single worker today |
@@ -245,8 +260,8 @@ Done on 26 November with local stand-in tiers: models pulled, workload built, fe
 
 ## Open questions for the team
 
-1. Which operating system does the GPU server run? SETUP.md assumes Linux with Docker.
-2. Which local model do we want? The default is `llama3.1:8b`.
-3. Which two cloud models are the cheap and the strong option for the experiments?
+1. Answered: the GPU server runs Windows 11 without Docker or WSL. Docker, PostgreSQL and OCR need WSL2 or a Linux machine. Which one?
+2. Partly answered: `gpt-oss:20b` is the local tier for now (the code default is still `llama3.1:8b`). Confirm it as the final local model.
+3. Which two cloud models are the cheap and the strong option for the experiments? Until keys exist, `qwen3.5:9b` and `qwen3.6:27b` stand in with simulated prices and latency.
 4. Will the server be reached over a domain with HTTPS, or only inside the lab network?
 5. Done: the project is in a private GitHub repository. `CLAUDE.md` gives Claude Code the context of the build sessions.

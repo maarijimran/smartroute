@@ -17,6 +17,8 @@ import json
 import os
 
 import _common  # noqa: F401
+from sqlalchemy import select
+
 from app.bootstrap import bootstrap
 from app.config import get_settings
 from app.core.features import get_extractor
@@ -25,6 +27,7 @@ from app.core.routing import state as learner_state
 from app.db import SessionLocal, create_all
 from app.evaluation.analysis import fit_arms, load_outcomes
 from app.evaluation.judge import JUDGE_VERSION, load_judgements
+from app.models import ModelEntry
 
 
 def main() -> None:
@@ -63,7 +66,10 @@ def main() -> None:
         export = {
             "policy": "frozen", "version": version, "trained_on_requests": len(train),
             "quality_source": quality_source,
-            "models": list(train.models), "feature_version": extractor.version,
+            "models": list(train.models),
+            # Lets import_frozen_router.py attach each arm to the right tier on any machine.
+            "tiers": {m.name: m.tier for m in db.execute(select(ModelEntry)).scalars() if m.name in train.models},
+            "feature_version": extractor.version,
             "feature_names": extractor.names(), "feature_dim": extractor.dim,
             "reward": {"mode": cfg.reward_mode, "weights": cfg.weights.model_dump(),
                        "c_ref_usd": cfg.c_ref_usd, "l_ref_s": cfg.l_ref_s, "ridge_lambda": cfg.ridge_lambda},

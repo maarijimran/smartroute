@@ -1,25 +1,26 @@
-"""Model registry, cloud provider credentials and SmartRoute API keys."""
+"""Model tiers and their provider keys (superadmin), the model list, and SmartRoute API keys."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
+from ..core import tiers
 from ..core.providers import VENDORS
 from ..db import get_db
 from ..deps import get_current_user, require_superadmin
-from ..models import ROLE_SUPERADMIN, ROLE_USER, ApiKey, ModelEntry, ProviderCredential, User, utcnow
+from ..models import ROLE_USER, ApiKey, ModelEntry, ProviderCredential, User, utcnow
 from ..schemas import (
     ApiKeyCreated,
     ApiKeyIn,
     ApiKeyOut,
-    CredentialIn,
     CredentialOut,
-    ModelIn,
     ModelOut,
     ModelUpdate,
+    TierIn,
+    TierOut,
 )
-from ..security import encrypt_secret, new_api_key
+from ..security import new_api_key
 
 router = APIRouter(prefix="/api", tags=["registry"])
 
@@ -44,19 +45,6 @@ def vendors(_: User = Depends(get_current_user)):
 # ---------------------------------------------------------------------- models
 
 
-def _check_vendor(vendor: str, is_local: bool) -> None:
-    preset = VENDORS.get(vendor)
-    if preset is None:
-        raise HTTPException(422, f"Unknown vendor '{vendor}'")
-    if preset.adapter == "mock" and get_settings().is_production:
-        raise HTTPException(422, "Mock models are not available in production")
-    if preset.adapter == "ollama" and not is_local:
-        raise HTTPException(422, "Ollama models run on this host and must be marked local")
-    if preset.adapter not in ("ollama", "mock") and is_local:
-        # A cloud vendor marked local would bypass the privacy gate.
-        raise HTTPException(422, "Only Ollama models can be marked local")
-
-
 @router.get("/models", response_model=list[ModelOut])
 def list_models(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     q = select(ModelEntry).order_by(ModelEntry.tier, ModelEntry.name)
@@ -65,27 +53,29 @@ def list_models(user: User = Depends(get_current_user), db: Session = Depends(ge
     return db.execute(q).scalars().all()
 
 
-@router.post("/models", response_model=ModelOut, status_code=201)
-def create_model(body: ModelIn, _: User = Depends(require_superadmin), db: Session = Depends(get_db)):
-    _check_vendor(body.vendor, body.is_local)
-    if db.execute(select(ModelEntry).where(ModelEntry.name == body.name)).scalars().first():
-        raise HTTPException(409, "A model with this name already exists")
-    model = ModelEntry(**body.model_dump())
-    db.add(model)
-    db.commit()
-    return model
-
-
 @router.patch("/models/{model_id}", response_model=ModelOut)
 def update_model(model_id: str, body: ModelUpdate, _: User = Depends(require_superadmin), db: Session = Depends(get_db)):
     model = db.get(ModelEntry, model_id)
     if model is None:
         raise HTTPException(404, "Model not found")
     data = body.model_dump(exclude_unset=True)
+    if data.get("enabled"):
+        if not tiers.is_configured(model):
+            raise HTTPException(422, "Choose a provider and model for this tier first")
+        if not model.name.startswith("mock-"):
+            others = db.execute(
+                select(ModelEntry).where(ModelEntry.tier == model.tier, ModelEntry.id != model.id, ModelEntry.enabled.is_(True))
+            ).scalars().all()
+            if any(not m.name.startswith("mock-") for m in others):
+                raise HTTPException(409, "A tier has one model. Change the tier's model instead of enabling another.")
     if "price_in_per_mtok" in data or "price_out_per_mtok" in data:
         model.price_updated_at = utcnow()  # prices are dated so experiments can cite them
     for key, value in data.items():
         setattr(model, key, value)
+    if "context_window" in data and VENDORS.get(model.vendor) and VENDORS[model.vendor].adapter == "ollama":
+        params = dict(model.params or {})
+        params["options"] = {**(params.get("options") or {}), "num_ctx": model.context_window}
+        model.params = params  # Ollama's num_ctx must follow the context window
     db.commit()
     return model
 
@@ -100,61 +90,53 @@ def reset_health(model_id: str, _: User = Depends(require_superadmin), db: Sessi
     return model
 
 
-@router.delete("/models/{model_id}", status_code=204)
-def delete_model(model_id: str, _: User = Depends(require_superadmin), db: Session = Depends(get_db)):
-    model = db.get(ModelEntry, model_id)
-    if model is None:
-        raise HTTPException(404, "Model not found")
-    db.delete(model)
-    db.commit()
+# ----------------------------------------------------------------------- tiers
+
+
+def _tier_out(db: Session, tier: str) -> TierOut:
+    entry = tiers.slot(db, tier)
+    cred = tiers.tier_credential(db, tier)
+    return TierOut(
+        tier=tier,
+        configured=tiers.is_configured(entry),
+        model=ModelOut.model_validate(entry) if entry is not None else None,
+        key_vendor=cred.vendor if cred else None,
+        key_hint=cred.key_hint if cred else None,
+        api_version=cred.api_version if cred else None,
+    )
+
+
+@router.get("/tiers", response_model=list[TierOut])
+def list_tiers(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
+    tiers.ensure_slots(db)
+    return [_tier_out(db, t) for t in tiers.TIERS]
+
+
+@router.put("/tiers/{tier}", response_model=TierOut)
+def put_tier(tier: str, body: TierIn, actor: User = Depends(require_superadmin), db: Session = Depends(get_db)):
+    """Sets the provider, model and key of a tier. The tier keeps its trained router weights."""
+    try:
+        tiers.set_tier(db, tier, actor, **body.model_dump())
+    except tiers.TierError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return _tier_out(db, tier)
 
 
 # ----------------------------------------------------------------- credentials
 
 
 @router.get("/credentials", response_model=list[CredentialOut])
-def list_credentials(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Own keys; the superadmin also sees the platform keys. Key values are never returned."""
-    q = select(ProviderCredential)
-    if user.role == ROLE_SUPERADMIN:
-        q = q.where(or_(ProviderCredential.user_id == user.id, ProviderCredential.user_id.is_(None)))
-    else:
-        q = q.where(ProviderCredential.user_id == user.id)
+def list_credentials(_: User = Depends(require_superadmin), db: Session = Depends(get_db)):
+    """The organisation's provider keys (key values are never returned). Keys are set per
+    tier with PUT /api/tiers/{tier}; users cannot add their own."""
+    q = select(ProviderCredential).where(ProviderCredential.user_id.is_(None))
     return db.execute(q.order_by(ProviderCredential.created_at.desc())).scalars().all()
 
 
-@router.post("/credentials", response_model=CredentialOut, status_code=201)
-def add_credential(body: CredentialIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    preset = VENDORS.get(body.vendor)
-    if preset is None or not preset.needs_key:
-        raise HTTPException(422, f"Vendor '{body.vendor}' does not take an API key")
-    if body.platform and user.role != ROLE_SUPERADMIN:
-        raise HTTPException(403, "Only the superadmin can add platform keys")
-    if preset.needs_base_url and not body.base_url:
-        raise HTTPException(422, f"{preset.label} needs an endpoint URL")
-    if body.base_url and not body.base_url.startswith("https://") and get_settings().is_production:
-        raise HTTPException(422, "Endpoint URLs must use https")
-    cred = ProviderCredential(
-        user_id=None if body.platform else user.id,
-        vendor=body.vendor,
-        label=body.label,
-        base_url=body.base_url or None,
-        api_version=body.api_version or None,
-        encrypted_key=encrypt_secret(body.api_key),
-        key_hint=body.api_key[-4:],
-    )
-    db.add(cred)
-    db.commit()
-    return cred
-
-
 @router.delete("/credentials/{cred_id}", status_code=204)
-def delete_credential(cred_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def delete_credential(cred_id: str, _: User = Depends(require_superadmin), db: Session = Depends(get_db)):
     cred = db.get(ProviderCredential, cred_id)
-    owns = cred is not None and (
-        cred.user_id == user.id or (cred.user_id is None and user.role == ROLE_SUPERADMIN)
-    )
-    if not owns:
+    if cred is None or cred.user_id is not None:
         raise HTTPException(404, "Credential not found")
     db.delete(cred)
     db.commit()

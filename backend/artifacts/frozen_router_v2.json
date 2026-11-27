@@ -8,6 +8,11 @@
   "sim-strong",
   "local-default"
  ],
+ "tiers": {
+  "sim-cheap": "cheap",
+  "sim-strong": "strong",
+  "local-default": "local"
+ },
  "feature_version": "a38136b668fa",
  "feature_names": [
   "log_in_tokens",

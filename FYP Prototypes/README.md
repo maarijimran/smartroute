@@ -50,7 +50,7 @@ Things worth trying live:
 - **Are the analytics numbers results?** No. They are demo data. Real results come from the GPU server (deck slide 15).
 - **Is the CNIC card real?** No. It is a generic specimen with a fictional name and the demo number `42101-1234567-1`, marked SPECIMEN and "Not a real document", and it does not copy the official card design.
 - **Does the OCR really run?** In the prototype the OCR result is prepared in advance. In the gateway, `baidu/Unlimited-OCR` reads the image on the GPU server and is tested with a mock on the laptop. OCR is new since the proposal (deck slide 11).
-- **What is actually verified?** See deck slide 14: 108 tests pass, and the 200-case privacy suite produced no unauthorised dispatches. All of this was run with mock models and the pattern detectors only.
+- **What is actually verified?** See deck slide 14: 108 tests pass, and the 200-case privacy suite produced no unauthorised dispatches. All of this was run with mock models and the pattern detectors only. That was the state when the deck was made. Since then the gateway has run on the GPU server with real local models and the full detectors; see `PROGRESS.md`.
 
 ## Rebuilding the techniques deck
 

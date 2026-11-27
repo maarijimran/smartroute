@@ -132,7 +132,6 @@ export default function PolicyPage() {
       <Card title="Access">
         <div className="grid gap-3 md:grid-cols-3">
           <Toggle checked={policy.allow_self_registration} disabled={readOnly} onChange={(v) => set("allow_self_registration", v)} label="Registration" />
-          <Toggle checked={policy.allow_platform_credentials} disabled={readOnly} onChange={(v) => set("allow_platform_credentials", v)} label="Shared keys" />
           <Toggle checked={policy.users_may_pin_model} disabled={readOnly} onChange={(v) => set("users_may_pin_model", v)} label="Model choice" />
         </div>
       </Card>

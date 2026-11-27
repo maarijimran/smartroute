@@ -60,26 +60,11 @@ class UserUpdate(BaseModel):
 
 
 # ---- model registry
-class ModelIn(BaseModel):
-    name: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{1,62}$")
-    display_name: str = ""
-    vendor: str
-    model_id: str
-    tier: Tier
-    is_local: bool = False
-    base_url: str | None = None
-    context_window: int = Field(8192, ge=256)
-    max_output_tokens: int = Field(2048, ge=16)
-    price_in_per_mtok: float = Field(0.0, ge=0)
-    price_out_per_mtok: float = Field(0.0, ge=0)
-    params: dict = Field(default_factory=dict)
-    enabled: bool = True
-
-
 class ModelUpdate(BaseModel):
+    """Small edits to a tier's model. Changing its provider or model goes through
+    PUT /api/tiers/{tier}, which also resets health and keeps the trained weights."""
+
     display_name: str | None = None
-    model_id: str | None = None
-    tier: Tier | None = None
     base_url: str | None = None
     context_window: int | None = Field(None, ge=256)
     max_output_tokens: int | None = Field(None, ge=16)
@@ -110,16 +95,29 @@ class ModelOut(ORM):
     last_error: str | None
 
 
-# ---- credentials and API keys
-class CredentialIn(BaseModel):
+class TierIn(BaseModel):
     vendor: str
-    label: str = ""
-    api_key: str = Field(min_length=4)
-    base_url: str | None = None
+    model_id: str = Field(min_length=1, max_length=128)
+    display_name: str = Field("", max_length=128)
+    base_url: str | None = Field(None, max_length=512)
+    api_version: str | None = Field(None, max_length=32)
+    api_key: str | None = Field(None, min_length=4, description="Leave empty to keep the tier's current key")
+    context_window: int = Field(8192, ge=256)
+    max_output_tokens: int = Field(2048, ge=16)
+    price_in_per_mtok: float = Field(0.0, ge=0)
+    price_out_per_mtok: float = Field(0.0, ge=0)
+
+
+class TierOut(BaseModel):
+    tier: Tier
+    configured: bool
+    model: ModelOut | None
+    key_vendor: str | None = None
+    key_hint: str | None = None
     api_version: str | None = None
-    platform: bool = False  # superadmin only: shared key for the organisation
 
 
+# ---- credentials and API keys
 class CredentialOut(ORM):
     id: str
     user_id: str | None

@@ -1,9 +1,9 @@
 """Authentication and role-based access control dependencies.
 
 Roles (single organisation):
-  superadmin  privacy policy, model registry, platform keys, roles, everything below
+  superadmin  privacy policy, the local/cheap/strong models and their provider keys, roles, everything below
   admin       manage ordinary users, view analytics and the confidential audit log
-  user        chat, own documents, own cloud keys, own SmartRoute API keys
+  user        chat, own documents, own SmartRoute API keys (no provider keys or models)
 """
 
 import threading

@@ -1,13 +1,16 @@
 # SmartRoute setup
 
-This file takes you from the code in this folder to a running system on the GPU server, and then through the experiments. Nothing here was downloaded or run on the laptop where the code was written, apart from the light packages needed for the tests.
+This file takes you from the code in this folder to a running system on the GPU server, and then through the experiments. The code was written on a laptop that runs no models; the first real run was on the GPU server on 26 November 2026 (results in [PROGRESS.md](PROGRESS.md)).
 
-Two labels are used throughout:
+Three labels are used throughout:
 
-- **Verified on the laptop**: the step was actually run and worked.
+- **Verified on the laptop**: run on the laptop with mock models and worked.
+- **Run on the server**: run on the GPU server with real local models on 26 November.
 - **Not yet run**: written carefully but never executed. Expect to fix small things the first time.
 
-The links below were not opened while writing this file. If one is dead, search for the name next to it.
+The server turned out to be **Windows 11 without Docker or WSL** (RTX 4000 Ada, 20 GB). Section 3 describes the Docker deployment the project was designed for (still not run); section 3a describes what was actually used on the Windows server.
+
+The links below were not all opened while writing this file. If one is dead, search for the name next to it.
 
 ## 1. What to download on the server
 
@@ -26,12 +29,18 @@ The links below were not opened while writing this file. If one is dead, search 
 
 | Job | Model | Size | How it gets downloaded |
 |---|---|---|---|
-| Local answers | An instruct model from the Ollama library, default `llama3.1:8b` | about 5 GB | `ollama pull llama3.1:8b` (https://ollama.com/library) |
+| Local tier (used on the server) | `gpt-oss:20b` (reasoning "low") | see `ollama list` | `ollama pull gpt-oss:20b` (https://ollama.com/library) |
+| Cheap-tier stand-in (no cloud keys yet) | `qwen3.5:9b` (reasoning off) | see `ollama list` | `ollama pull qwen3.5:9b` |
+| Strong-tier stand-in (no cloud keys yet) | `qwen3.6:27b` (reasoning off, 8k context) | see `ollama list` | `ollama pull qwen3.6:27b` |
+| Correctness judge for the benchmark | `gemma4:26b` (a different family from every graded model) | see `ollama list` | `ollama pull gemma4:26b` |
+| Local answers, code default | `llama3.1:8b` (`SMARTROUTE_LOCAL_MODEL`); only used if the tier script is not run | about 5 GB | `ollama pull llama3.1:8b` |
 | PII detection (ML) | `nvidia/gliner-pii` | about 570M parameters | Automatically on first start (https://huggingface.co/nvidia/gliner-pii) |
 | PII detection, lighter alternative | `knowledgator/gliner-pii-base-v1.0` | base | Set `SMARTROUTE_PII_GLINER_MODEL` (https://huggingface.co/knowledgator/gliner-pii-base-v1.0) |
 | Names and entities for Presidio | spaCy `en_core_web_lg` | about 400 MB | `python -m spacy download en_core_web_lg` (https://spacy.io/models/en) |
 | Router features | `sentence-transformers/all-MiniLM-L6-v2` | about 22M parameters | Automatically by `scripts/fit_features.py` (https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) |
-| OCR for photos and scanned PDFs | `baidu/Unlimited-OCR` (MIT licence) | 3B parameters, BF16; at least 8 GB of GPU memory | Automatically by the `ocr` container on first start (https://huggingface.co/baidu/Unlimited-OCR); serving recipe at https://recipes.vllm.ai/baidu/Unlimited-OCR |
+| OCR for photos and scanned PDFs | `baidu/Unlimited-OCR` (MIT licence) | 3B parameters, BF16; at least 8 GB of GPU memory | Automatically by the `ocr` container on first start (https://huggingface.co/baidu/Unlimited-OCR); serving recipe at https://recipes.vllm.ai/baidu/Unlimited-OCR. Weights are already downloaded on the server, but vLLM needs Linux (WSL2 or Docker). |
+
+On the server only one of the three tier models fits in GPU memory next to the backend's detectors, so switching tier reloads a model from disk (30–70 s); a loaded model answers in seconds.
 
 Libraries: Presidio (https://microsoft.github.io/presidio/), GLiNER (https://github.com/urchade/GLiNER). Both are installed from `backend/requirements-ml.txt`.
 
@@ -50,14 +59,14 @@ Check each model's licence before the final release and record the exact version
 | Item | What it would add | Link |
 |---|---|---|
 | `nvidia/prompt-task-and-complexity-classifier` | A learned complexity score instead of the built-in heuristic | https://huggingface.co/nvidia/prompt-task-and-complexity-classifier |
-| `prometheus-eval/prometheus-7b-v2.0` | A local judge model for automatic scoring | https://huggingface.co/prometheus-eval/prometheus-7b-v2.0 |
+| `prometheus-eval/prometheus-7b-v2.0` | An alternative local judge model (the server run used `gemma4:26b` instead) | https://huggingface.co/prometheus-eval/prometheus-7b-v2.0 |
 | LLMLingua-2 | Prompt compression | https://github.com/microsoft/LLMLingua |
 | `withmartian/routerbench` | Pre-recorded outcomes to test routers without API cost | https://huggingface.co/datasets/withmartian/routerbench |
 | `urchade/gliner_multi_pii-v1` | Urdu and mixed-language PII | https://huggingface.co/urchade/gliner_multi_pii-v1 |
 
 ### Cloud API keys
 
-You need at least one cheap and one strong cloud model. Keys are entered in the web interface (Settings → API), never in a file.
+The superadmin chooses the cheap and the strong model and enters each one's key in the web interface (Settings → Models, one card per tier), never in a file. Users cannot add keys or models. The keys are stored encrypted.
 
 | Provider | Get a key | Pricing page |
 |---|---|---|
@@ -67,7 +76,11 @@ You need at least one cheap and one strong cloud model. Keys are entered in the 
 | Azure OpenAI | https://learn.microsoft.com/azure/ai-services/openai/ | Azure portal |
 | OpenRouter, Groq, DeepSeek, Together | Their consoles | Their pricing pages |
 
-The registry is seeded with Claude Haiku 5.5 (cheap, $0.10 / $0.50 per million tokens) and Claude Opus 5.5 (strong, $4 / $20). Those prices were read on 3 November 2026. Check them against the pricing page and correct them in Settings → Models before any experiment, because the router calculates cost from these numbers. You can replace both with any other provider's models.
+No cloud model is seeded: on a fresh install the cheap and strong tiers say "Not set". Enter each model's prices from the provider's pricing page and note the date, because the router calculates cost from these numbers.
+
+**Status:** no cloud keys exist yet. `scripts/register_ollama_tiers.py` sets the three tiers to the Ollama stand-ins, with Haiku-class and Opus-class prices as simulated prices. On the server the tier slots are called `local-default`, `sim-cheap` and `sim-strong`.
+
+**Changing a tier keeps its trained weights.** When keys arrive, the superadmin sets cheap and strong to the cloud models in Settings → Models. Each tier keeps its slot, so the frozen router, epsilon-greedy and LinUCB use the trained cheap and strong weights for the new models from the first request. Health and latency are reset for the new model. Collect outcomes for the new models and retrain when the evaluation needs numbers for them; use a new outcomes file for that (`--out`).
 
 ## 2. Run on the laptop (no model, no key)
 
@@ -87,11 +100,11 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-Sign in with the email and password from `backend/.env`. Run the tests with `.venv/Scripts/python -m pytest -q` (108 tests).
+Sign in with the email and password from `backend/.env`. Run the tests with `.venv/Scripts/python -m pytest -q` (126 tests).
 
 ## 3. Run on the GPU server with Docker
 
-**Not yet run.** The laptop has no Docker, so `docker-compose.yml` and both Dockerfiles have never been built.
+**Not yet run.** Neither the laptop nor the Windows server has Docker, so `docker-compose.yml` and both Dockerfiles have never been built. This needs a Linux host or WSL2 with the NVIDIA Container Toolkit. The tier models and the judge from section 1 can be pulled into the `ollama` container the same way as `llama3.1:8b` below.
 
 ```bash
 cp .env.example .env
@@ -110,12 +123,58 @@ Things to know:
 - Keep `SMARTROUTE_ENCRYPTION_KEY` safe. Without it the stored cloud keys cannot be decrypted.
 - The backend runs one worker process. The online learner and the rate limiter keep state in that process, so do not raise the worker count.
 - The `ocr` container (vLLM serving `baidu/Unlimited-OCR`) downloads about 7 GB on first start. It needs vLLM 0.25 or later, which is why it uses the dedicated `vllm/vllm-openai:unlimited-ocr` image. For Hopper GPUs (H100, H200) the recipe names `vllm/vllm-openai:unlimited-ocr-cu129` instead.
-- `OCR_GPU_MEMORY_UTILIZATION` (default 0.35) caps how much GPU memory vLLM takes. Without it vLLM reserves 90% and Ollama cannot load. On a 24 GB GPU, 0.35 is about 8.4 GB, enough for the 3B model. If vLLM reports that the KV cache cannot fit 16,384 tokens, raise the share or lower `--max-model-len` in `docker-compose.yml`.
+- `OCR_GPU_MEMORY_UTILIZATION` (default 0.35) caps how much GPU memory vLLM takes. Without it vLLM reserves 90% and Ollama cannot load. On a 24 GB GPU, 0.35 is about 8.4 GB, enough for the 3B model. On the 20 GB server 0.35 is only 7 GB, below the 8 GB the model needs, so raise the share and expect to unload the larger tier models while OCR runs. If vLLM reports that the KV cache cannot fit 16,384 tokens, raise the share or lower `--max-model-len` in `docker-compose.yml`.
 - The recipe's `docker run` also passes `--privileged`. Compose leaves it out to keep the container unprivileged. Add `privileged: true` to the `ocr` service only if vLLM fails to start without it.
 - The OCR server has no published port; only the backend reaches it, at `http://ocr:8000/v1`. In production the backend refuses to start if `SMARTROUTE_OCR_BASE_URL` points outside this host or the private network, so document images cannot leave the server.
 - Put a reverse proxy with HTTPS in front before anyone outside the lab uses it, and set `PUBLIC_WEB_URL` and `PUBLIC_API_URL` to the HTTPS addresses.
 
-### Without Docker
+### 3a. Run on the Windows server without Docker (what was used on 26 November)
+
+**Run on the server.** Python 3.11 virtual environment, PyTorch with CUDA, SQLite, Ollama for Windows. OCR stays off because vLLM does not run on Windows.
+
+```powershell
+# Large files on D: (C: is nearly full)
+setx OLLAMA_MODELS D:\SmartRoute\ollama-models
+setx OLLAMA_KEEP_ALIVE 30m
+setx HF_HOME D:\SmartRoute\hf-cache
+
+ollama pull gpt-oss:20b
+ollama pull qwen3.5:9b
+ollama pull qwen3.6:27b
+ollama pull gemma4:26b          # judge, only for the benchmark
+
+cd backend
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu130   # match your CUDA version
+.venv\Scripts\python -m pip install -r requirements-ml.txt
+.venv\Scripts\python -m spacy download en_core_web_lg
+copy .env.example .env
+```
+
+In `backend/.env` set `SMARTROUTE_PII_PRESIDIO=true`, `SMARTROUTE_PII_GLINER=true` (GLiNER uses the GPU by default, `SMARTROUTE_PII_GLINER_DEVICE=auto`), `SMARTROUTE_EMBEDDINGS_ENABLED=true` and `SMARTROUTE_OCR_BACKEND=off`. Keep `127.0.0.1` rather than `localhost` in every URL: on Windows `localhost` tries IPv6 first and cost about 2.2 s per request.
+
+Load the trained router instead of retraining (the weights are in git, the data is not):
+
+```powershell
+cd backend
+.venv\Scripts\python scripts\register_ollama_tiers.py --ctx-strong 8192
+.venv\Scripts\python scripts\set_reward_calibration.py --c-ref 0.0075 --l-ref 10
+.venv\Scripts\python scripts\import_frozen_router.py artifacts\frozen_router_v3.json --warm-start
+```
+
+Then choose **Frozen** in Settings → Policy. `frozen_router_v3.json` is trained on judge correctness and is the one to use; v1 and v2 were trained on word overlap and are kept only for comparison (v1 also counted context-window exclusions as failures).
+
+Start the app:
+
+```powershell
+cd backend;  .venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd frontend; npm install; npm run dev          # frontend/.env.local: NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+```
+
+### Without Docker on Linux
+
+**Not yet run.**
 
 ```bash
 cd backend
@@ -130,43 +189,51 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## 4. First checks on the server
 
-Do these in order. Each one exercises code that has never run.
+Do these in order on any new machine. Status as of 26 November is given for each.
 
-1. **Local model.** In Settings → Models, confirm `local-default` points at the model you pulled. Its adapter options must contain `{"options": {"num_ctx": 8192}}` with the same number as its context window. Ollama cuts off longer prompts without an error if `num_ctx` is smaller.
-2. **Cloud models.** Add your keys in Keys and API, then send one pinned message to each cloud model from the chat page.
-3. **Detectors.** Run the privacy suite with the full detector set:
+1. **Local models.** *Done on the server.* In Settings → Models, confirm `local-default`, `sim-cheap` and `sim-strong` point at the models you pulled. Each one's adapter options must contain `{"options": {"num_ctx": N}}` with the same number as its context window; `register_ollama_tiers.py` sets this. Ollama cuts off longer prompts without an error if `num_ctx` is smaller.
+2. **Cloud models.** *Not yet run: no keys.* As superadmin, open Settings → Models and set the provider, model, key and prices for the cheap and strong tiers. Then send one pinned message to each from the chat page.
+3. **Detectors.** *Done on the server.* Run the privacy suite with the full detector set:
    ```bash
+   # Docker
    docker compose exec -e SMARTROUTE_PII_PRESIDIO=true -e SMARTROUTE_PII_GLINER=true backend python scripts/run_privacy_suite.py
+   # Windows server (detector flags set in backend/.env)
+   .venv\Scripts\python scripts\run_privacy_suite.py
    ```
-   It uses mock models and a throwaway database, so it costs nothing. See section 6 for the laptop numbers to compare against.
-4. **Hardware profile.** Note the local model's load time, tokens per second and latency while several chats run at once. The proposal requires this, and the router's latency reference depends on it.
-5. **OCR.** Upload a photo and a scanned PDF page on the Documents page and read the passages it produces.
+   It uses mock models and a throwaway database, so it costs nothing, and takes about 30 seconds with GLiNER on the GPU. See section 6 for the numbers to compare against.
+4. **Hardware profile.** *Partly done.* Only one tier model fits in GPU memory next to the detectors, so switching tier reloads a model (30–70 s); a loaded model answers in seconds. Load time, tokens per second and latency under several concurrent chats are still to be recorded for the report.
+5. **OCR.** *Not yet run: needs Linux for vLLM.* Upload a photo and a scanned PDF page on the Documents page and read the passages it produces.
    - Check that the text has no leftover markup such as `<|det|>` or `<|ref|>`. `clean_output` in `backend/app/core/ocr.py` was written from the model card without seeing a real response, so this is the first thing to fix if anything looks wrong.
    - Check that a CNIC in a photo is detected: a question about that document should stay on the local model and appear in the audit log.
    - Note the seconds per page. OCR runs while the upload waits, and long scans are capped at 20 pages (`SMARTROUTE_OCR_MAX_PAGES`).
 
 ## 5. Run the experiments
 
-All commands run inside `backend/` (prefix with `docker compose exec backend` when using Docker). Only step 3 spends money.
+All commands run inside `backend/` (prefix with `docker compose exec backend` when using Docker; on the Windows server use `.venv\Scripts\python`). With cloud tiers, only step 3 spends money; with the local stand-ins nothing does.
 
 | Step | Command | Status |
 |---|---|---|
-| 1. Build the workload | `python scripts/build_workload.py` | Not yet run. Stops with a clear message if the QASPER layout differs from what it expects. |
-| 2. Fit features on the train split | `python scripts/fit_features.py` then set `SMARTROUTE_EMBEDDINGS_ENABLED=true` and restart | Not yet run |
-| 3. Collect outcomes | `python scripts/collect_outcomes.py --models local-default claude-haiku claude-opus --budget-usd 55` | Not yet run. Resumable. Start with `--limit 20 --budget-usd 2` as a pilot. |
-| 4. Train the frozen router | `python scripts/train_frozen.py --warm-start` | Not yet run |
-| 5. Human ratings | `python scripts/ratings.py export`, two raters fill the sheet, `python scripts/ratings.py import a.csv b.csv` | Not yet run |
-| 6. Evaluate | `python scripts/evaluate.py --ratings data/ratings.json --policy-json policy.json` | Verified on synthetic data only |
-| 7. Privacy suite | `python scripts/run_privacy_suite.py` | Verified on the laptop with regex detectors |
+| 0. Register the tiers (no cloud keys) | `python scripts/register_ollama_tiers.py --ctx-strong 8192` | Run on the server |
+| 1. Build the workload | `python scripts/build_workload.py` | Run on the server: 588 requests over 120 papers (only 28 unanswerable questions in the sample, not 40) |
+| 2. Fit features on the train split | `python scripts/fit_features.py` then set `SMARTROUTE_EMBEDDINGS_ENABLED=true` and restart | Run on the server: 27 dimensions, 16 from PCA. Result in `artifacts/features.json` |
+| 3. Collect outcomes | `python scripts/collect_outcomes.py --models local cheap strong --by-model --budget-usd <cap>` (tier names; registry names also work) | Run on the server: 1,764 answers (588 × 3). Resumable. Pilot first with `--limit 20`. `--by-model` stops Ollama reloading a model on every call. With stand-in tiers the budget caps simulated cost. For real cloud tiers use `--budget-usd 55` and a new `--out` file. |
+| 3a. Simulated cloud latency | `python scripts/apply_latency_model.py` | Run on the server. Only for stand-in tiers; keeps the measured value in `measured_latency_ms` |
+| 3b. Grade answers with the judge | `python scripts/judge_outcomes.py --judge gemma4:26b` | Run on the server. Rubric v3, 94% identical grades on re-grading |
+| 4. Train the frozen router | `python scripts/train_frozen.py --judgements data/judgements.jsonl --judge-model gemma4:26b --warm-start` | Run on the server: **v3** (judge correctness). v1 and v2 were trained without `--judgements` (word overlap) |
+| 5. Human ratings | `python scripts/ratings.py export`, two raters fill the sheet, `python scripts/ratings.py import a.csv b.csv` | Exported (`data/ratings_sheet.csv`, 108 blinded answers); not yet rated |
+| 6. Evaluate | `python scripts/evaluate.py --judgements data/judgements.jsonl --judge-model gemma4:26b --policy-json data/policy.json` (add `--ratings data/ratings.json` once rated) | Run on the server: `data/evaluation_report_judge.json` and `data/evaluation_report_wordoverlap.json` |
+| 7. Privacy suite | `python scripts/run_privacy_suite.py` | Run on the server with Presidio and GLiNER |
 
-Before step 3, set the reward settings in the Policy page from the pilot and do not change them afterwards:
+The `data/` folder (workload, outcomes, judgements, reports, ratings sheet) stays on the server and is not in git. Only the trained weights in `artifacts/` are.
 
-- **C_ref** should be close to the cost of one typical request on your strong model. The default of $0.002 is too low for a model that costs about $0.01 per request: the strong model then scores zero on cost for every request and no router ever picks it. `evaluate.py` prints a warning when a model is almost never the best choice.
+Before step 3, set the reward settings from the pilot and do not change them afterwards. On the server they are C_ref = $0.0075 and L_ref = 10 s (`python scripts/set_reward_calibration.py --c-ref 0.0075 --l-ref 10`, saved in the policy and `data/policy.json`). Recalibrate when real cloud tiers replace the stand-ins:
+
+- **C_ref** should be close to the cost of one typical request on your strong model. The code default of $0.002 is too low for a model that costs about $0.01 per request: the strong model then scores zero on cost for every request and no router ever picks it. `evaluate.py` prints a warning when a model is almost never the best choice.
 - **L_ref** should be close to the slowest acceptable answer time.
 
 Save the policy to a file for step 6 with `GET /api/policy`.
 
-The benchmark runs as a separate account (`eval@smartroute.local`) that has no cloud keys of its own. Add your cloud keys as **platform keys** (superadmin, Settings → API) or step 3 will find no eligible cloud model. Benchmark spend counts against the platform budget in Settings → Policy (default $100 per month), and the script stops at its own `--budget-usd` as well.
+The benchmark runs as a separate account (`eval@smartroute.local`). It uses the keys the superadmin set for each tier, like every other user; without them step 3 finds no eligible cloud model. Benchmark spend counts against the platform budget in Settings → Policy (default $100 per month), and the script stops at its own `--budget-usd` as well.
 
 To try the evaluation script with no data at all:
 
@@ -177,19 +244,27 @@ python scripts/evaluate.py --outcomes data/outcomes_synthetic.jsonl
 
 The output is marked as synthetic. Those numbers are invented and must not go in the report.
 
-## 6. What the laptop runs showed
+## 6. What the runs showed
 
-- **Tests:** 108 pass (privacy gate, router maths, conversation context, OCR, pipeline, RBAC, both APIs, evaluation code).
-- **Privacy suite, regex detectors only, 200 cases:**
-  - Enforcement failures: 0 of 150 cases that must be blocked.
-  - Structured identifiers (CNIC, phone, email, card, IBAN): all 80 detected.
-  - Person names: 0 of 10 detected, and all 10 would have reached a cloud model. Regex cannot find names. This is the reason Presidio and GLiNER must be on in production.
-  - Harmless lookalikes wrongly blocked: 3 of 50.
-- **Web interface:** type-checks and builds. It was not clicked through in a browser.
+Full results and their interpretation are in [PROGRESS.md](PROGRESS.md) under "Server session, 26 November". In short:
+
+- **Tests:** 126 pass with mock models (privacy gate, router maths, conversation context, OCR, pipeline, RBAC, both APIs, evaluation code, judge, latency simulation).
+- **Privacy suite, 200 cases:**
+
+  | | Regex only (laptop) | Presidio + GLiNER (server) |
+  |---|---|---|
+  | Unauthorised cloud dispatches | 0 / 150 | 0 / 150 |
+  | Person names detected | 0 / 10 | 10 / 10 |
+  | Detector recall / precision | 0.889 / 0.964 | 1.000 / 0.865 |
+  | Harmless lookalikes over-blocked | 3 / 50 | 14 / 50 |
+
+  GLiNER reads numbers in academic text as cards, accounts or IDs. Whether to leave structured identifiers to the checksum-validated regex only is an open decision.
+- **Benchmark with stand-in tiers (test split, 116 requests, judge correctness):** the three models are about equally correct. Every policy saves about 98% compared with the strong tier, but none beats always using the cheap model. The oracle shows +0.07 quality of headroom. When the cheap model's quality drops partway through the stream, LinUCB keeps a reward of 0.735, against 0.625 for the frozen router.
+- **Web interface:** type-checks and builds; used on the server with real local models, but not yet clicked through systematically.
 
 ## 7. Using the router API
 
-Create a SmartRoute key in Keys and API. The API is OpenAI-compatible:
+Create a SmartRoute key in Settings → API. The API is OpenAI-compatible, and the models behind it are the tiers the superadmin has set:
 
 ```python
 from openai import OpenAI
