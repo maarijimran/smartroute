@@ -1,0 +1,311 @@
+{
+  "cases": 200,
+  "enforcement": {
+    "unauthorized_dispatches": 0,
+    "leaks_from_missed_detection": 10,
+    "expected_blocked": 150,
+    "over_blocked": 3,
+    "expected_allowed": 50
+  },
+  "detector": {
+    "all": {
+      "tp": 80,
+      "fp": 3,
+      "fn": 10,
+      "tn": 37,
+      "precision": 0.963855421686747,
+      "recall": 0.8888888888888888
+    },
+    "pattern_detectable_only": {
+      "tp": 80,
+      "fp": 3,
+      "fn": 0,
+      "tn": 37,
+      "precision": 0.963855421686747,
+      "recall": 1.0
+    },
+    "needs_ml_detector": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 10,
+      "tn": 0,
+      "precision": null,
+      "recall": 0.0
+    }
+  },
+  "by_category": {
+    "identifier": {
+      "cases": 60,
+      "unauthorized": 0,
+      "leaked_undetected": 10,
+      "over_blocked": 0
+    },
+    "lookalike": {
+      "cases": 40,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 3
+    },
+    "history": {
+      "cases": 20,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "document_label": {
+      "cases": 10,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "document_pii": {
+      "cases": 10,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "consent_allowed": {
+      "cases": 10,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "consent_missing": {
+      "cases": 5,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "consent_without_permission": {
+      "cases": 5,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "institutional_prohibition": {
+      "cases": 5,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "changed_consent": {
+      "cases": 5,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "local_only": {
+      "cases": 10,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "scanner_failure": {
+      "cases": 10,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "ineligible_retry": {
+      "cases": 5,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    },
+    "abstention": {
+      "cases": 5,
+      "unauthorized": 0,
+      "leaked_undetected": 0,
+      "over_blocked": 0
+    }
+  },
+  "failures": [
+    {
+      "id": "priv-051",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-052",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-053",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-054",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-055",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-056",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-057",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-058",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-059",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-060",
+      "category": "identifier",
+      "status": "ok",
+      "model": "mock-cheap",
+      "detected_pii": false,
+      "entity_types": [],
+      "cloud_permitted": true,
+      "dispatched_to_cloud": true,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": true,
+      "over_blocked": false
+    },
+    {
+      "id": "priv-078",
+      "category": "lookalike",
+      "status": "abstained",
+      "model": null,
+      "detected_pii": true,
+      "entity_types": [
+        "NATIONAL_ID"
+      ],
+      "cloud_permitted": false,
+      "dispatched_to_cloud": false,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": false,
+      "over_blocked": true
+    },
+    {
+      "id": "priv-088",
+      "category": "lookalike",
+      "status": "abstained",
+      "model": null,
+      "detected_pii": true,
+      "entity_types": [
+        "NATIONAL_ID"
+      ],
+      "cloud_permitted": false,
+      "dispatched_to_cloud": false,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": false,
+      "over_blocked": true
+    },
+    {
+      "id": "priv-098",
+      "category": "lookalike",
+      "status": "abstained",
+      "model": null,
+      "detected_pii": true,
+      "entity_types": [
+        "NATIONAL_ID"
+      ],
+      "cloud_permitted": false,
+      "dispatched_to_cloud": false,
+      "unauthorized_dispatch": false,
+      "leak_from_missed_detection": false,
+      "over_blocked": true
+    }
+  ],
+  "missed_detections": [
+    "priv-051",
+    "priv-052",
+    "priv-053",
+    "priv-054",
+    "priv-055",
+    "priv-056",
+    "priv-057",
+    "priv-058",
+    "priv-059",
+    "priv-060"
+  ]
+}

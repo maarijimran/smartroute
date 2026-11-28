@@ -69,7 +69,9 @@ backend/app/
   api/                      auth, chat, documents, registry, policy, analytics, openai_compat
   evaluation/, scripts/     workload, outcomes, correctness judge, frozen training, ratings, evaluation, privacy suite
 backend/artifacts/          features.json + frozen_router_v1-3.json (trained weights, in git; data/ is not)
-backend/tests/              126 tests (pytest); conftest forces SQLite, OCR off, ML detectors off
+backend/tests/              138 tests (pytest); conftest forces SQLite, OCR off, ML detectors off
+results/                    one folder per run (baseline: 2026-11-26_baseline_per_tier_ridge); scripts/snapshot_results.py; never edit a committed run
+kaggle/                     smartroute_backend.ipynb: backend on Kaggle (T4 x2) + Cloudflare tunnel for the laptop frontend
 frontend/                   Next.js 15 + Tailwind; app/(app)/chat, app/(app)/settings/*
 FYP Prototypes/             offline jury prototype (HTML), deck (pptx), screenshots, presenter README
 ```
@@ -80,7 +82,7 @@ FYP Prototypes/             offline jury prototype (HTML), deck (pptx), screensh
 # backend
 cd backend && python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt     # + requirements-ml.txt on the server
-python -m pytest -q                                          # expect 126 passed
+python -m pytest -q                                          # expect 138 passed
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # frontend

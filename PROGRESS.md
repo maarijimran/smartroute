@@ -90,6 +90,12 @@ All 14 over-blocks are "lookalikes": academic text with numbers. GLiNER labels t
 
 GLiNER ran on the CPU (now GPU, `SMARTROUTE_PII_GLINER_DEVICE`); Presidio tried to download a missing spaCy model at runtime and could exit the process (now refused, fails closed); Ollama ignored `think`, so reasoning could consume the output budget; outcome collection reloaded a model on almost every call (`--by-model` with warm-up); `localhost` cost ~2.2 s per request on Windows (now `127.0.0.1`); two tests assumed the laptop. 118 tests pass.
 
+## Results kept for comparison (28 November)
+
+Before the router is changed, the 26 November results are frozen as the **baseline** in [`results/2026-11-26_baseline_per_tier_ridge/`](results/2026-11-26_baseline_per_tier_ridge/README.md): setup, all result tables, weight fingerprints, the laptop privacy report and the Kaggle greeting false positives. The code that produced them is tagged `baseline-per-tier-ridge` (commit `b564724`). The raw files are still only on the server; `scripts/snapshot_results.py` adds them to that folder (see its README). Every later run gets its own folder in `results/`, so improvements can be shown against this baseline.
+
+**Next change planned:** separate query difficulty (learned once, from models of different strength) from model ability (a few numbers per model, fitted from about 50 judge-graded calibration questions), so a tier's model can be replaced without retraining the router.
+
 ## Tier slots (27 November)
 
 Asked for: no seeded Claude models; the superadmin alone chooses the provider, model and key for the local, cheap and strong tiers; users cannot add, change or remove keys or models; and when the superadmin changes a tier's model, routing continues from that tier's trained weights instead of starting from scratch.
