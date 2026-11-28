@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import math
 import logging
 import threading
 import time
@@ -34,6 +35,7 @@ from ..models import (
     ConfidentialEvent,
     Document,
     DocumentChunk,
+    EventQueryFeatures,
     ModelEntry,
     ProviderCredential,
     RoutingEvent,
@@ -66,7 +68,10 @@ from .providers import VENDORS, ChatRequest, ChatResult, CredentialSpec, ModelSp
 from .providers.base import FINISH_LENGTH, FINISH_REFUSAL
 from .reward import FAILURE_REWARD, combine_quality, reward
 from .routing import state as learner_state
+from .routing.qfeatures import RetrievalStats, query_features
+from .routing.router_v2 import RouterV2, get_router_v2, load_card, model_key
 from .routing.policies import (
+    CalibratedPolicy,
     Candidate,
     Decision,
     EpsilonGreedyPolicy,
@@ -215,7 +220,8 @@ class Route:
         return "local" if self.spec.is_local else (self.cred.scope if self.cred else "platform")
 
     def candidate(self) -> Candidate:
-        return Candidate(self.spec.name, self.spec.tier, self.spec.is_local, self.est_cost_usd, self.spec.latency_s)
+        return Candidate(self.spec.name, self.spec.tier, self.spec.is_local, self.est_cost_usd, self.spec.latency_s,
+                         model_key(self.spec.vendor, self.spec.model_id))
 
 
 @dataclass
@@ -250,6 +256,8 @@ class Plan:
     follow_up: bool = False
     history_mode: str = "none"
     history_messages: int = 0
+    xq: list[float] | None = None  # Router v2 features (None when Router v2 is not trained)
+    router_version: str | None = None
 
 
 @dataclass
@@ -376,16 +384,18 @@ def resolve_credential(db: Session, model: ModelEntry) -> CredentialSpec | str:
 
 
 def _retrieve(
-    db: Session, req: RouteRequest, cfg: PolicyConfig, query: dict[str, float], task: str | None, follow_up: bool
-) -> list[Evidence]:
+    db: Session, req: RouteRequest, cfg: PolicyConfig, query: dict[str, float], task: str | None, follow_up: bool,
+    question: str = "",
+) -> tuple[list[Evidence], RetrievalStats]:
+    """The passages sent with the question, and how well retrieval matched it (Router v2 features)."""
     if not req.document_ids:
-        return []
+        return [], RetrievalStats()
     # Ownership is enforced here: a user can only ground answers in their own documents.
     docs = db.execute(
         select(Document).where(Document.id.in_(req.document_ids), Document.user_id == req.user_id)
     ).scalars().all()
     if not docs:
-        return []
+        return [], RetrievalStats()
     for d in docs:
         d.last_used_at = utcnow()  # keeps an in-use document from expiring
     by_id = {d.id: d for d in docs}
@@ -395,10 +405,12 @@ def _retrieve(
         .order_by(DocumentChunk.document_id, DocumentChunk.idx)
     ).scalars().all()
     if not chunks:
-        return []
+        return [], RetrievalStats()
     picked = []
+    raw_scores: list[float] = []
     if task != "summary":
         scores = bm25_scores(query, [c.text for c in chunks])
+        raw_scores = list(scores)  # before the follow-up bonus: how well the question itself matched
         prior = set(req.prior_chunk_ids)
         if follow_up and prior:
             # Evidence carry-over: a follow-up usually asks about what was just
@@ -415,7 +427,14 @@ def _retrieve(
         doc = by_id[chunk.document_id]
         kind = KIND_PUBLIC_DOC if doc.label == "public" else KIND_CONFIDENTIAL_DOC
         out.append(Evidence(n, doc.filename, chunk.page, chunk.text, kind, chunk.id))
-    return out
+    stats = RetrievalStats.from_retrieval(question, raw_scores, [c.text for c in picked], cfg.retrieval_top_k)
+    if not raw_scores:  # summaries: no ranking, but the size of the documents still matters
+        stats = RetrievalStats(
+            coverage=RetrievalStats.from_retrieval(question, [1.0], [c.text for c in picked], 1).coverage,
+            passages=min(len(picked) / max(cfg.retrieval_top_k, 1), 1.0),
+            log_doc_chunks=math.log1p(len(chunks)),
+        )
+    return out, stats
 
 
 # ----------------------------------------------------------------- eligibility
@@ -486,7 +505,8 @@ def _eligibility(
 
 
 def _make_selector(
-    db: Session, req: RouteRequest, cfg: PolicyConfig, x: np.ndarray, info: RequestInfo, notices: list[str]
+    db: Session, req: RouteRequest, cfg: PolicyConfig, x: np.ndarray, info: RequestInfo, notices: list[str],
+    xq: list[float] | None = None, router: RouterV2 | None = None,
 ) -> tuple[Callable[[list[Candidate]], Decision | None], str, int]:
     """Returns (selector, policy name, policy version). Any error inside a learned
     policy falls back to the fixed rules, so a broken learner never blocks answers."""
@@ -503,6 +523,28 @@ def _make_selector(
         return (lambda cands: fixed.select(info, cands)), fixed.name, 0
     if name == "rules":
         return (lambda cands: rules.select(info, cands)), "rules", 0
+
+    if name in ("calibrated", "calibrated_ucb"):
+        if router is None or xq is None:
+            notices.append("Router v2 has not been trained yet; fixed rules were used.")
+            return (lambda cands: rules.select(info, cands)), "rules", 0
+        # Cards are read now, while the database session is open; retries reuse them.
+        cards = {}
+        for m in db.execute(select(ModelEntry).where(ModelEntry.enabled.is_(True))).scalars():
+            cards[m.name] = load_card(db, router, model_key(m.vendor, m.model_id))
+        calibrated = CalibratedPolicy(ucb=name == "calibrated_ucb")
+        xq_arr = np.array(xq, dtype=float)
+
+        def select_v2(cands: list[Candidate]) -> Decision | None:
+            try:
+                return calibrated.select(xq_arr, cands, router.qm, cards, cfg)
+            except Exception:
+                log.exception("Router v2 failed; falling back to fixed rules")
+                decision = rules.select(info, cands)
+                decision.explanation = "router error, fixed rules used: " + decision.explanation
+                return decision
+
+        return select_v2, calibrated.name, 0
 
     rng = np.random.default_rng(req.seed) if req.seed is not None else None
 
@@ -573,7 +615,7 @@ def prepare(db: Session, req: RouteRequest) -> Plan:
             f"{len(window.omitted)} earlier messages were left out; the most relevant earlier turns were kept."
         )
 
-    evidence = _retrieve(db, req, cfg, query, task, turn.follow_up)
+    evidence, retrieval_stats = _retrieve(db, req, cfg, query, task, turn.follow_up, question)
     if req.system_prompt is not None:
         system, from_caller = req.system_prompt, True
     else:
@@ -645,7 +687,18 @@ def prepare(db: Session, req: RouteRequest) -> Plan:
         x = np.zeros(get_extractor().dim)
         req.policy_override = req.policy_override or "rules"
         notices.append("Feature extraction failed; fixed rules were used.")
-    selector, policy_name, policy_version = _make_selector(db, req, cfg, x, info, notices)
+    router = get_router_v2()
+    xq = None
+    if router is not None and router.compatible(get_extractor()):
+        xq = router.vector(
+            query_features(
+                question=question, in_tokens=est_in, est_out_tokens=est_out, complexity=complexity,
+                history_tokens=history_tokens if draft.history or draft.memory else 0,
+                has_document=has_document, follow_up=turn.follow_up, task=task, retrieval=retrieval_stats,
+            ),
+            x,
+        )
+    selector, policy_name, policy_version = _make_selector(db, req, cfg, x, info, notices, xq, router)
 
     plan = Plan(
         event_id=new_id(),
@@ -672,6 +725,8 @@ def prepare(db: Session, req: RouteRequest) -> Plan:
         follow_up=turn.follow_up,
         history_mode=window.mode,
         history_messages=len(history),
+        xq=xq,
+        router_version=router.version if xq is not None else None,
     )
 
     # 5. Audit trail for confidential content, written before anything is dispatched.
@@ -780,6 +835,13 @@ def _write_event(db: Session, plan: Plan, *, status: str, **fields) -> None:
             **fields,
         )
     )
+    chosen = fields.get("chosen_model") or (decision.arm if decision else None)
+    if plan.xq is not None and plan.router_version and chosen and chosen in plan.routes:
+        spec = plan.routes[chosen].spec
+        db.merge(EventQueryFeatures(
+            event_id=plan.event_id, query_model_version=plan.router_version, xq=plan.xq,
+            model_key=model_key(spec.vendor, spec.model_id),
+        ))
 
 
 def _base_outcome(plan: Plan, status: str) -> Outcome:

@@ -140,7 +140,44 @@ def apply_pending_updates(db: Session, cfg: PolicyConfig, force: bool = False) -
                 applied += 1
             arms.n_scored += applied
             save_arms(db, name, arms, note=f"batch update with {applied} scored outcomes")
+    _update_model_cards(db, cfg, [e for e in events if e.reward is not None])
     for event in events:
         event.reward_applied = True
     db.commit()
     return len(events)
+
+
+def _update_model_cards(db: Session, cfg: PolicyConfig, events: list[RoutingEvent]) -> None:
+    """Router v2: the answering model's card learns from each scored answer.
+
+    Target: the answer's quality in [0, 1]; a failure counts as 0. Only features recorded
+    under the current query model are used (an older query model's features differ)."""
+    from ...models import EventQueryFeatures
+    from .router_v2 import STATUS_CALIBRATED, STATUS_LEARNING, get_router_v2, load_card, save_card
+
+    router = get_router_v2()
+    if router is None or not events:
+        return
+    by_id = {e.id: e for e in events}
+    rows = db.execute(
+        select(EventQueryFeatures).where(
+            EventQueryFeatures.event_id.in_(list(by_id)),
+            EventQueryFeatures.card_applied.is_(False),
+            EventQueryFeatures.query_model_version == router.version,
+        )
+    ).scalars().all()
+    grouped: dict[str, list[tuple[list[float], float]]] = {}
+    for row in rows:
+        event = by_id[row.event_id]
+        if not row.model_key:
+            continue
+        failed = event.reward is not None and event.reward <= FAILURE_REWARD
+        y = 0.0 if failed else event.quality
+        if y is None:
+            continue
+        grouped.setdefault(row.model_key, []).append((row.xq, float(min(max(y, 0.0), 1.0))))
+        row.card_applied = True
+    for key, items in grouped.items():
+        card, status = load_card(db, router, key)
+        card = card.update(router.qm, np.array([x for x, _ in items]), np.array([y for _, y in items]))
+        save_card(db, router, key, card, STATUS_CALIBRATED if status == STATUS_CALIBRATED else STATUS_LEARNING)

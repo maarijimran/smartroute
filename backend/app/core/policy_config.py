@@ -43,7 +43,7 @@ class PolicyConfig(BaseModel):
     users_may_pin_model: bool = True
 
     # ---- Routing ----
-    routing_policy: Literal["rules", "frozen", "bandit", "linucb"] = "rules"
+    routing_policy: Literal["rules", "frozen", "bandit", "linucb", "calibrated", "calibrated_ucb"] = "rules"
     reward_mode: Literal["split", "full"] = Field(
         "split",
         description="split = learn quality, calculate cost and latency (research guide). "
@@ -60,6 +60,11 @@ class PolicyConfig(BaseModel):
     linucb_alpha: float = Field(0.5, ge=0)
     linucb_gamma: float = Field(0.995, gt=0, le=1)
     max_retries: int = Field(1, ge=0, le=3)
+    # Router v2 (calibrated policies)
+    quality_floor: float = Field(
+        0.5, ge=0, le=1, description="Calibrated policies avoid a model predicted below this quality for a request."
+    )
+    v2_ucb_alpha: float = Field(1.0, ge=0, description="Exploration bonus of calibrated UCB, in standard deviations.")
 
     # ---- Context and tokens ----
     output_caps: dict[str, int] = Field(

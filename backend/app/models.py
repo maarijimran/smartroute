@@ -300,3 +300,36 @@ class PolicyState(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (Index("ix_policy_state_active", "name", "active"),)
+
+
+class ModelCardRow(Base):
+    """Router v2: what is known about one model's ability (core/routing/irt.py).
+
+    Keyed by model identity (provider + model ID), not by tier, so a model keeps its card
+    when it moves between tiers or comes back later. A card is only valid for the query
+    model it was fitted with (`query_model_version`)."""
+
+    __tablename__ = "model_cards"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    model_key: Mapped[str] = mapped_column(String(200), index=True)  # "<vendor>:<model_id>"
+    query_model_version: Mapped[str] = mapped_column(String(64), index=True)
+    card: Mapped[dict] = mapped_column(JSON)  # ModelCard.to_json()
+    status: Mapped[str] = mapped_column(String(16), default="learning")  # calibrating | calibrated | learning
+    calibration: Mapped[dict] = mapped_column(JSON, default=dict)  # items asked, uncertainty, cost, error
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (Index("ix_model_card_key_version", "model_key", "query_model_version", unique=True),)
+
+
+class EventQueryFeatures(Base):
+    """Router v2 features of a routed request, kept next to routing_events so ratings can
+    update the answering model's card. Separate table: routing_events keeps its schema."""
+
+    __tablename__ = "event_query_features"
+
+    event_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    query_model_version: Mapped[str] = mapped_column(String(64))
+    xq: Mapped[list] = mapped_column(JSON)
+    model_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    card_applied: Mapped[bool] = mapped_column(Boolean, default=False)

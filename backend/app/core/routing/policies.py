@@ -12,6 +12,7 @@ import numpy as np
 from ..policy_config import PolicyConfig
 from ..reward import cost_term, latency_term
 from .arms import ArmSet
+from .irt import OOD_THRESHOLD, ModelCard, QueryModel
 
 TIER_LOCAL, TIER_CHEAP, TIER_STRONG = "local", "cheap", "strong"
 
@@ -28,6 +29,7 @@ class Candidate:
     is_local: bool
     est_cost_usd: float
     latency_s: float
+    model_key: str = ""  # "<vendor>:<model_id>": which model card applies (Router v2)
 
 
 @dataclass(frozen=True)
@@ -213,6 +215,60 @@ class LinUCBPolicy:
             best, 1.0, False, f"LinUCB optimistic score {scores[best]:.3f} (pacer {pacer_lambda:.2f})", scores,
             breakdown,
         )
+
+
+class CalibratedPolicy:
+    """Router v2: predicted quality from query difficulty and the model's card.
+
+    Same utility as the baseline (quality, cost and speed terms). Two safeguards:
+    - quality floor: a model predicted below `cfg.quality_floor` for this request is not
+      chosen while another model clears the floor (a free but weak model cannot win hard
+      requests); if none clears it, the floor is ignored and the best is chosen
+    - unusual requests (unlike the training data) get extra uncertainty
+    The UCB variant adds an exploration bonus from the card's uncertainty, so uncalibrated
+    or uncertain models are tried and learn from ratings."""
+
+    def __init__(self, ucb: bool = False):
+        self.ucb = ucb
+        self.name = "calibrated_ucb" if ucb else "calibrated"
+
+    def select(
+        self,
+        xq,
+        candidates: list[Candidate],
+        qm: QueryModel,
+        cards: dict[str, tuple[ModelCard, str]],
+        cfg: PolicyConfig,
+    ) -> Decision:
+        unusual = qm.ood_score(xq) > OOD_THRESHOLD
+        extra_var = 1.0 if unusual else 0.0
+        parts, means = {}, {}
+        for c in candidates:
+            card, status = cards[c.name]
+            mean, std = card.predict(qm, xq, extra_var=extra_var)
+            mean, std = float(mean), float(std)
+            p = utility_parts(cfg, mean, c)
+            p.update(quality_sd=std, card=status, below_floor=mean < cfg.quality_floor)
+            if self.ucb:
+                bonus = cfg.v2_ucb_alpha * cfg.weights.quality * std
+                p.update(bonus=bonus, pacer=0.0, total=p["total"] + bonus)
+            parts[c.name], means[c.name] = p, mean
+        passing = {n: p["total"] for n, p in parts.items() if not p["below_floor"]}
+        pool = passing or {n: p["total"] for n, p in parts.items()}
+        best = _argmax(pool)
+        notes = []
+        if passing and len(passing) < len(parts):
+            notes.append(f"below quality floor {cfg.quality_floor:.2f}: " + ", ".join(sorted(set(parts) - set(passing))))
+        if not passing:
+            notes.append(f"no model clears the quality floor {cfg.quality_floor:.2f}")
+        if unusual:
+            notes.append("unusual request, wider uncertainty")
+        how = "optimistic" if self.ucb else "predicted"
+        text = f"calibrated router: highest {how} utility {parts[best]['total']:.3f}"
+        if notes:
+            text += " (" + "; ".join(notes) + ")"
+        return Decision(best, 1.0, False, text, {n: p["total"] for n, p in parts.items()},
+                        {n: _rounded(p) for n, p in parts.items()})
 
 
 def pacer_lambda(spent_usd: float, budget_usd: float | None, month_fraction: float) -> float:
