@@ -77,7 +77,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--judge", required=True, help="Ollama model tag of the judge, e.g. gemma4:26b")
     parser.add_argument("--outcomes", default=_common.data_path("outcomes.jsonl"))
-    parser.add_argument("--workload", default=_common.data_path("workload.jsonl"))
+    parser.add_argument("--workload", nargs="+", default=[_common.data_path("workload.jsonl")],
+                        help="one or more workload files with the reference answers (e.g. workload.jsonl general.jsonl)")
     parser.add_argument("--out", default=_common.data_path("judgements.jsonl"))
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--num-ctx", type=int, default=8192)
@@ -91,7 +92,7 @@ def main() -> None:
     args = parser.parse_args()
 
     think = {"false": False, "true": True, "none": None}.get(args.think.lower(), args.think)
-    items = {it["item_id"]: it for it in load_jsonl(args.workload)}
+    items = {it["item_id"]: it for path in args.workload for it in load_jsonl(path)}
     outcomes = load_jsonl(args.outcomes)
     judged: dict[tuple[str, str], dict] = {}
     if os.path.exists(args.out):

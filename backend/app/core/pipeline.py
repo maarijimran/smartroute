@@ -258,6 +258,7 @@ class Plan:
     history_messages: int = 0
     xq: list[float] | None = None  # Router v2 features (None when Router v2 is not trained)
     router_version: str | None = None
+    qf: list[float] | None = None  # Router v2 base features (qfeatures.NAMES), always computed
 
 
 @dataclass
@@ -687,17 +688,15 @@ def prepare(db: Session, req: RouteRequest) -> Plan:
         x = np.zeros(get_extractor().dim)
         req.policy_override = req.policy_override or "rules"
         notices.append("Feature extraction failed; fixed rules were used.")
+    # Router v2 base features: always computed (cheap), so benchmark runs can collect them
+    # before a v2 router exists; the full vector adds the embedding dimensions of x.
+    qf = query_features(
+        question=question, in_tokens=est_in, est_out_tokens=est_out, complexity=complexity,
+        history_tokens=history_tokens if draft.history or draft.memory else 0,
+        has_document=has_document, follow_up=turn.follow_up, task=task, retrieval=retrieval_stats,
+    )
     router = get_router_v2()
-    xq = None
-    if router is not None and router.compatible(get_extractor()):
-        xq = router.vector(
-            query_features(
-                question=question, in_tokens=est_in, est_out_tokens=est_out, complexity=complexity,
-                history_tokens=history_tokens if draft.history or draft.memory else 0,
-                has_document=has_document, follow_up=turn.follow_up, task=task, retrieval=retrieval_stats,
-            ),
-            x,
-        )
+    xq = router.vector(qf, x) if router is not None and router.compatible(get_extractor()) else None
     selector, policy_name, policy_version = _make_selector(db, req, cfg, x, info, notices, xq, router)
 
     plan = Plan(
@@ -727,6 +726,7 @@ def prepare(db: Session, req: RouteRequest) -> Plan:
         history_messages=len(history),
         xq=xq,
         router_version=router.version if xq is not None else None,
+        qf=qf,
     )
 
     # 5. Audit trail for confidential content, written before anything is dispatched.

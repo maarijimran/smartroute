@@ -94,7 +94,7 @@ def main() -> int:
                     f"{args.out} already has answers from {sorted(other)} under '{m}', which is now "
                     f"{registry[m].model_id}. Write to a new file with --out."
                 )
-        doc_map = ensure_documents(db, user, {i["doc_id"] for i in items}, args.docs_dir)
+        doc_map = ensure_documents(db, user, {i["doc_id"] for i in items if i.get("doc_id")}, args.docs_dir)
         total = len(items) * len(args.models)
         n = len(done)
         print(f"{total} model calls planned, {n} already done, ${spent:.4f} spent so far")
@@ -130,6 +130,8 @@ def main() -> int:
                 "measured_latency_ms": outcome.latency_ms, "ttft_ms": outcome.ttft_ms,
                 "in_tokens": outcome.in_tokens, "out_tokens": outcome.out_tokens,
                 "features": plan.x,
+                "qf": plan.qf,  # Router v2 base features; the embedding dimensions are the tail of "features"
+                "kind": item.get("kind"),
                 "info": {"in_tokens": plan.est_in_tokens, "complexity": plan.info.complexity,
                          "has_document": plan.info.has_document},
                 "event_id": outcome.event_id, "error": outcome.error or plan.abstain_reason,
