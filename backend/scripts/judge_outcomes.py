@@ -89,7 +89,12 @@ def main() -> None:
     parser.add_argument("--recheck", type=int, default=50, help="answers to grade twice for self-consistency")
     parser.add_argument("--summary-only", action="store_true")
     parser.add_argument("--only", default=None, help="comma-separated item_id:model pairs (audits)")
+    parser.add_argument("--max-minutes", type=float, default=None,
+                        help="stop cleanly after this long (Kaggle sessions end at 12 h); rerun to resume")
+    parser.add_argument("--skip-auto", action="store_true",
+                        help="do not grade answers that are scored exactly (multiple choice, numeric, yes/no, unanswerable)")
     args = parser.parse_args()
+    deadline = time.time() + 60 * args.max_minutes if args.max_minutes else None
 
     think = {"false": False, "true": True, "none": None}.get(args.think.lower(), args.think)
     items = {it["item_id"]: it for path in args.workload for it in load_jsonl(path)}
@@ -105,6 +110,10 @@ def main() -> None:
     if args.only:
         wanted = {tuple(pair.split(":", 1)) for pair in args.only.split(",")}
         todo = [r for r in todo if (r["item_id"], r["model"]) in wanted]
+    if args.skip_auto:
+        from app.evaluation.router_v2_training import AUTO_KINDS, item_kind
+
+        todo = [r for r in todo if r["item_id"] in items and item_kind(items[r["item_id"]]) not in AUTO_KINDS]
     random.Random(13).shuffle(todo)  # blind to model and order: answers of all models interleaved
     todo = todo[: args.limit] if args.limit else todo
     if not args.summary_only:
@@ -119,6 +128,11 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             futures = [pool.submit(grade, r) for r in todo]
             for future in as_completed(futures):  # only this thread writes the file
+                if deadline and time.time() > deadline:
+                    for f in futures:
+                        f.cancel()
+                    print(f"Time limit of {args.max_minutes} min reached after {n} grades. Re-run to resume.")
+                    break
                 n += 1
                 try:
                     r, g = future.result()

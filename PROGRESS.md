@@ -94,7 +94,37 @@ GLiNER ran on the CPU (now GPU, `SMARTROUTE_PII_GLINER_DEVICE`); Presidio tried 
 
 Before the router is changed, the 26 November results are frozen as the **baseline** in [`results/2026-11-26_baseline_per_tier_ridge/`](results/2026-11-26_baseline_per_tier_ridge/README.md): setup, all result tables, weight fingerprints, the laptop privacy report and the Kaggle greeting false positives. The code that produced them is tagged `baseline-per-tier-ridge` (commit `b564724`). The raw files are still only on the server; `scripts/snapshot_results.py` adds them to that folder (see its README). Every later run gets its own folder in `results/`, so improvements can be shown against this baseline.
 
-**Next change planned:** separate query difficulty (learned once, from models of different strength) from model ability (a few numbers per model, fitted from about 50 judge-graded calibration questions), so a tier's model can be replaced without retraining the router.
+## Router v2: difficulty and ability (28 November, Phases 1–2 built)
+
+Plan: [`docs/plan_router_v2.md`](docs/plan_router_v2.md). Query difficulty is learned once, from models of different strength; each model gets a card of a few ability numbers, fitted from 20–60 automatically scored calibration questions. A tier's model can therefore be replaced without retraining the router.
+
+**Built and tested on the laptop:** 186 backend tests, synthetic data only.
+
+- **Core maths:** `core/routing/qfeatures.py`, `irt.py`, `router_v2.py`, `calibration.py`.
+  - New features: retrieval signals and question type.
+  - Query model; model cards with uncertainty stored by provider + model ID; Bayesian updates.
+  - Calibration questions chosen by how much they reveal, with early stopping, a budget cap and the privacy skip for cloud models.
+- **Gateway:**
+  - The **Calibrated** and **Calibrated UCB** policies sit next to the baseline policies, which are unchanged.
+  - A quality floor (default 0.5) and a check for unusual requests.
+  - Ratings update the answering model's card.
+  - The scores in the chat details show uncertainty and card status.
+- **Interface:**
+  - Settings → Models shows each tier's card status with a **Calibrate** button.
+  - Settings → Policy has the new routers and the quality floor.
+  - Checked in a browser with mock models.
+- **Phase 2 pipeline:** `build_general_set.py`, `set_tiers.py`, `train_router_v2.py`, `build_calibration_bank.py`, time limits on collection and judging, and the stage-by-stage Kaggle notebook (SETUP.md §5a).
+
+**Decisions made while building:**
+- **Four training models instead of five:** llama3.2:3b, qwen3.5:9b, phi4:14b and gpt-oss:20b. qwen3.6:27b was dropped: on the server it was no better than gpt-oss and it is slow on T4s.
+- **Smaller data, to fit about a week of free Kaggle quota:** 160 QASPER papers and about 400 general items.
+- **Two judges** from families outside the graded models (gemma4:26b, mistral-small:24b), averaged. Answers that can be scored exactly are not judged.
+- **The committed features.json is reused.** Its embedding projection was fitted on the old workload's train split without labels, so overlap with the new test split is a minor, label-free leak; it is reported.
+
+**Next:**
+1. Run the Kaggle training notebook.
+2. Write and freeze `results/PROTOCOL_v2.md` before any test run.
+3. Write the evaluation script for E1–E5.
 
 ## Tier slots (27 November)
 

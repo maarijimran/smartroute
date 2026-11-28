@@ -23,6 +23,7 @@ the live learner.
 import argparse
 import os
 import sys
+import time
 
 import _common  # noqa: F401
 from sqlalchemy import select
@@ -64,7 +65,10 @@ def main() -> int:
         help="answer every request with one model before the next. Use when several models share "
              "one GPU, so Ollama does not reload a model on every call and inflate its latency.",
     )
+    parser.add_argument("--max-minutes", type=float, default=None,
+                        help="stop cleanly after this long (Kaggle sessions end at 12 h); rerun to resume")
     args = parser.parse_args()
+    deadline = time.time() + 60 * args.max_minutes if args.max_minutes else None
 
     items = [i for i in load_jsonl(args.workload) if i["split"] in args.splits][: args.limit]
     done = set()
@@ -104,6 +108,9 @@ def main() -> int:
             pairs = [(item, model) for item in items for model in args.models]
         warmed = None
         for item, model in pairs:
+            if deadline and time.time() > deadline:
+                print(f"Time limit of {args.max_minutes} min reached after {n} calls. Re-run to resume.")
+                return 3
             if (item["item_id"], model) in done:
                 continue
             if args.by_model and model != warmed and registry[model].is_local:
