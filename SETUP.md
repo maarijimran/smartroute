@@ -250,14 +250,14 @@ Router v2 (`docs/plan_router_v2.md`) needs answers from several models of differ
 
 | Stage | What it runs |
 |---|---|
-| `data` | `build_workload.py --papers 160` (QASPER) and `build_general_set.py` (MMLU, ARC, GSM8K, Dolly; about 400 items) |
+| `data` | `build_workload.py --papers 120` (QASPER, same size as the baseline) and `build_general_set.py` (MMLU, ARC, GSM8K, Dolly; about 260 items) |
 | `collect_r1` | `set_tiers.py` (gpt-oss:20b, qwen3.5:9b, phi4:14b), then `collect_outcomes.py --max-minutes …` on both workloads into `data/outcomes_r1.jsonl` |
 | `collect_r2` | the same for llama3.2:3b into `data/outcomes_r2.jsonl` |
-| `judge` | `judge_outcomes.py --skip-auto` with gemma4:26b and mistral-small:24b for each round (answers scored exactly are not judged) |
+| `judge` | `judge_outcomes.py --skip-auto` with gemma4:26b on every free-form answer and mistral-small:24b on a fixed 30% sample (enough to measure agreement); answers scored exactly are not judged |
 | `train` | `train_router_v2.py` (artifacts/router_v2.json and data/router_v2_training_report.json), then `build_calibration_bank.py` (artifacts/calibration_bank.json) |
 | `snapshot` | `snapshot_results.py --name router_v2_training` |
 
-Each run: **Save Version → Save & Run All (Commit)**. From the second run on, attach the previous version's output as input, so its `state/` is restored. Expect about a week of the free GPU quota (~19 h of collection, ~9 h of judging). The committed `artifacts/features.json` is reused, not refitted, so the baseline and Router v2 share the same embedding projection.
+Each run: **Save Version → Save & Run All (Commit)**. From the second run on, attach the previous version's output as input, so its `state/` is restored. Expect about two runs (~15 h of collection, ~4 h of judging). The committed `artifacts/features.json` is reused, not refitted, so the baseline and Router v2 share the same embedding projection.
 
 To use the result, copy `router_v2.json` and `calibration_bank.json` into `backend/artifacts/` wherever the backend runs. Then choose **Calibrated** or **Calibrated UCB** in Settings → Policy, and press **Calibrate** on any tier whose model was not part of training.
 

@@ -91,6 +91,9 @@ def main() -> None:
     parser.add_argument("--only", default=None, help="comma-separated item_id:model pairs (audits)")
     parser.add_argument("--max-minutes", type=float, default=None,
                         help="stop cleanly after this long (Kaggle sessions end at 12 h); rerun to resume")
+    parser.add_argument("--sample", type=float, default=1.0,
+                        help="grade only this fraction of the answers (fixed by item and model, so a rerun picks the same ones);"
+                             " a second judge on a sample is enough to measure agreement")
     parser.add_argument("--skip-auto", action="store_true",
                         help="do not grade answers that are scored exactly (multiple choice, numeric, yes/no, unanswerable)")
     args = parser.parse_args()
@@ -114,6 +117,14 @@ def main() -> None:
         from app.evaluation.router_v2_training import AUTO_KINDS, item_kind
 
         todo = [r for r in todo if r["item_id"] in items and item_kind(items[r["item_id"]]) not in AUTO_KINDS]
+    if args.sample < 1.0:
+        import hashlib
+
+        def in_sample(r) -> bool:
+            h = hashlib.sha256(f"{r['item_id']}|{r['model']}".encode()).digest()
+            return int.from_bytes(h[:4], "big") / 2**32 < args.sample
+
+        todo = [r for r in todo if in_sample(r)]
     random.Random(13).shuffle(todo)  # blind to model and order: answers of all models interleaved
     todo = todo[: args.limit] if args.limit else todo
     if not args.summary_only:

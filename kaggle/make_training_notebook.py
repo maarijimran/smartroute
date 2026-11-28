@@ -33,20 +33,20 @@ continues where the last one stopped and saves its state in the notebook output.
 `state/backend/artifacts/calibration_bank.json`, `state/backend/data/router_v2_training_report.json`
 and a `results/` snapshot. Download those and give them to Claude to commit.
 
-Rough GPU time on T4 ×2: collection ~19 h, judging ~9 h, training < 1 h: about one week of the free quota.
+Rough GPU time on T4 ×2: collection ~15 h, judging ~4 h, training < 1 h: about two runs.
 """)
 
 code(r'''
 # 1. Configuration: change only this cell
 STAGES = ["data", "collect_r1", "collect_r2", "judge", "train", "snapshot"]  # run in this order, done stages are skipped
 SESSION_MINUTES = 650            # stop starting new work after this (a commit run may last 12 h)
-PAPERS = 160                     # QASPER papers (60/20/20 by paper)
-GENERAL = dict(mmlu=120, arc=60, gsm8k=120, open=100)
+PAPERS = 120                     # QASPER papers (60/20/20 by paper), same size as the baseline
+GENERAL = dict(mmlu=80, arc=40, gsm8k=80, open=60)
 ROUNDS = {                       # a tier holds one model at a time, so models are collected in rounds
     "r1": {"local": "gpt-oss:20b", "cheap": "qwen3.5:9b", "strong": "phi4:14b"},
     "r2": {"local": "llama3.2:3b"},
 }
-JUDGES = ["gemma4:26b", "mistral-small:24b"]   # families not among the graded models
+JUDGES = {"gemma4:26b": 1.0, "mistral-small:24b": 0.3}   # judge -> share it grades; families not among the graded models
 ''')
 
 code(r'''
@@ -151,12 +151,12 @@ def stage_collect(name):
     return True
 
 def stage_judge():
-    for judge in JUDGES:
+    for judge, share in JUDGES.items():
         pull(judge)
         for name in ROUNDS:
             run("scripts/judge_outcomes.py", "--judge", judge, "--outcomes", f"data/outcomes_{name}.jsonl",
                 "--workload", "data/workload.jsonl", "data/general.jsonl", "--out", f"data/judgements_{name}.jsonl",
-                "--skip-auto", "--max-minutes", str(max(minutes_left(), 1)))
+                "--skip-auto", "--sample", str(share), "--max-minutes", str(max(minutes_left(), 1)))
             if minutes_left() < 5:
                 return False
         subprocess.run(["ollama", "stop", judge])
@@ -165,7 +165,7 @@ def stage_judge():
 def stage_train():
     runs = sum((["--run", f"data/outcomes_{n}.jsonl", f"data/judgements_{n}.jsonl"] for n in ROUNDS), [])
     assert run("scripts/train_router_v2.py", *runs, "--workload", "data/workload.jsonl", "data/general.jsonl",
-               "--judges", *JUDGES) == 0
+               "--judges", *JUDGES.keys()) == 0
     assert run("scripts/build_calibration_bank.py", "--workload", "data/workload.jsonl", "data/general.jsonl") == 0
     return True
 

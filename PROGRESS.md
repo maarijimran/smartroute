@@ -117,8 +117,8 @@ Plan: [`docs/plan_router_v2.md`](docs/plan_router_v2.md). Query difficulty is le
 
 **Decisions made while building:**
 - **Four training models instead of five:** llama3.2:3b, qwen3.5:9b, phi4:14b and gpt-oss:20b. qwen3.6:27b was dropped: on the server it was no better than gpt-oss and it is slow on T4s.
-- **Smaller data, to fit about a week of free Kaggle quota:** 160 QASPER papers and about 400 general items.
-- **Two judges** from families outside the graded models (gemma4:26b, mistral-small:24b), averaged. Answers that can be scored exactly are not judged.
+- **Smaller data, to finish well before the FYP-I evaluation on 7 December:** 120 QASPER papers (the same size as the baseline) and about 260 general items. About 20 GPU hours in all: two Kaggle runs.
+- **Two judges** from families outside the graded models. gemma4:26b grades every free-form answer; mistral-small:24b grades a fixed 30% sample, which is enough to measure agreement and is averaged in where present. Answers that can be scored exactly are not judged.
 - **The committed features.json is reused.** Its embedding projection was fitted on the old workload's train split without labels, so overlap with the new test split is a minor, label-free leak; it is reported.
 
 **Next:**

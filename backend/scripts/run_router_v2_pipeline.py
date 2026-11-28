@@ -28,8 +28,8 @@ ROUNDS = {
     "r1": {"local": "gpt-oss:20b", "cheap": "qwen3.5:9b", "strong": "phi4:14b"},
     "r2": {"local": "llama3.2:3b"},
 }
-JUDGES = ["gemma4:26b", "mistral-small:24b"]
-GENERAL = {"mmlu": 120, "arc": 60, "gsm8k": 120, "open": 100}
+JUDGES = {"gemma4:26b": 1.0, "mistral-small:24b": 0.3}  # judge -> share of answers it grades (agreement sample)
+GENERAL = {"mmlu": 80, "arc": 40, "gsm8k": 80, "open": 60}
 SCRIPTS = os.path.join(_common.BACKEND_DIR, "scripts")
 DONE_FILE = _common.data_path("router_v2_stages_done.txt")
 
@@ -71,12 +71,12 @@ def stage_collect(name: str, args) -> bool:
 
 
 def stage_judge(args) -> bool:
-    for judge in JUDGES:
+    for judge, share in JUDGES.items():
         pull(judge)
         for name in ROUNDS:
             code = run("judge_outcomes.py", "--judge", judge, "--outcomes", _common.data_path(f"outcomes_{name}.jsonl"),
                        "--workload", _common.data_path("workload.jsonl"), _common.data_path("general.jsonl"),
-                       "--out", _common.data_path(f"judgements_{name}.jsonl"), "--skip-auto")
+                       "--out", _common.data_path(f"judgements_{name}.jsonl"), "--skip-auto", "--sample", str(share))
             if code != 0:
                 return False
         subprocess.run(["ollama", "stop", judge])
@@ -87,7 +87,7 @@ def stage_train(args) -> bool:
     runs = sum((["--run", _common.data_path(f"outcomes_{n}.jsonl"), _common.data_path(f"judgements_{n}.jsonl")]
                 for n in ROUNDS), [])
     workloads = [_common.data_path("workload.jsonl"), _common.data_path("general.jsonl")]
-    if run("train_router_v2.py", *runs, "--workload", *workloads, "--judges", *JUDGES):
+    if run("train_router_v2.py", *runs, "--workload", *workloads, "--judges", *JUDGES.keys()):
         return False
     return run("build_calibration_bank.py", "--workload", *workloads) == 0
 
@@ -100,7 +100,7 @@ def stage_snapshot(args) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--stages", nargs="+", default=STAGES, choices=STAGES)
-    parser.add_argument("--papers", type=int, default=160)
+    parser.add_argument("--papers", type=int, default=120)
     parser.add_argument("--note", default="Router v2 data collection and training on the GPU server")
     args = parser.parse_args()
     if os.environ.get("SMARTROUTE_EMBEDDINGS_ENABLED", "").lower() != "true":
