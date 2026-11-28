@@ -115,6 +115,8 @@ class TierOut(BaseModel):
     key_vendor: str | None = None
     key_hint: str | None = None
     api_version: str | None = None
+    card: dict | None = None  # Router v2: the model's card status (uncalibrated, calibrating, calibrated, ...)
+    calibrating: bool = False
 
 
 # ---- credentials and API keys

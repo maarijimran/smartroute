@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..core import tiers
+from ..core.routing import calibration, router_v2
 from ..core.providers import VENDORS
 from ..db import get_db
 from ..deps import get_current_user, require_superadmin
@@ -96,13 +97,19 @@ def reset_health(model_id: str, _: User = Depends(require_superadmin), db: Sessi
 def _tier_out(db: Session, tier: str) -> TierOut:
     entry = tiers.slot(db, tier)
     cred = tiers.tier_credential(db, tier)
+    configured = tiers.is_configured(entry)
+    card = None
+    if configured:
+        card = router_v2.card_info(db, router_v2.get_router_v2(), router_v2.model_key(entry.vendor, entry.model_id))
     return TierOut(
         tier=tier,
-        configured=tiers.is_configured(entry),
+        configured=configured,
         model=ModelOut.model_validate(entry) if entry is not None else None,
         key_vendor=cred.vendor if cred else None,
         key_hint=cred.key_hint if cred else None,
         api_version=cred.api_version if cred else None,
+        card=card,
+        calibrating=calibration.is_running(tier),
     )
 
 
@@ -119,6 +126,26 @@ def put_tier(tier: str, body: TierIn, actor: User = Depends(require_superadmin),
         tiers.set_tier(db, tier, actor, **body.model_dump())
     except tiers.TierError as exc:
         raise HTTPException(422, str(exc)) from exc
+    return _tier_out(db, tier)
+
+
+@router.post("/tiers/{tier}/calibrate", response_model=TierOut, status_code=202)
+def calibrate_tier(tier: str, actor: User = Depends(require_superadmin), db: Session = Depends(get_db)):
+    """Router v2: learn the tier's model card from automatically scored questions, in the
+    background. Poll GET /api/tiers for progress (card.calibration)."""
+    if tier not in tiers.TIERS:
+        raise HTTPException(404, "Unknown tier")
+    router = router_v2.get_router_v2()
+    if router is None:
+        raise HTTPException(422, "Router v2 has not been trained yet")
+    bank = calibration.load_bank()
+    if bank is None or not calibration.bank_compatible(bank, router):
+        raise HTTPException(422, "The calibration bank is missing or was built for different features")
+    entry = tiers.slot(db, tier)
+    if not tiers.is_configured(entry) or not entry.enabled:
+        raise HTTPException(422, f"Set and switch on the {tier} model first")
+    if not calibration.start_in_background(tier, actor):
+        raise HTTPException(409, "A calibration of this tier is already running")
     return _tier_out(db, tier)
 
 
