@@ -21,6 +21,8 @@ const ROUTERS: { value: Policy["routing_policy"]; label: string }[] = [
   { value: "frozen", label: "Frozen" },
   { value: "bandit", label: "ε-greedy" },
   { value: "linucb", label: "LinUCB" },
+  { value: "calibrated", label: "Calibrated" },
+  { value: "calibrated_ucb", label: "Calibrated UCB" },
 ];
 
 function Num({ label, value, onChange, step = "any", disabled }: { label: string; value: number | null; onChange: (v: number) => void; step?: string; disabled: boolean }) {
@@ -167,6 +169,8 @@ export default function PolicyPage() {
           <Num label="Batch" step="1" disabled={readOnly} value={policy.update_batch_size} onChange={(v) => set("update_batch_size", v)} />
           <Num label="Retries" step="1" disabled={readOnly} value={policy.max_retries} onChange={(v) => set("max_retries", v)} />
           <Num label="Passages" step="1" disabled={readOnly} value={policy.retrieval_top_k} onChange={(v) => set("retrieval_top_k", v)} />
+          <Num label="Quality floor" disabled={readOnly} value={policy.quality_floor} onChange={(v) => set("quality_floor", v)} />
+          <Num label="UCB bonus" disabled={readOnly} value={policy.v2_ucb_alpha} onChange={(v) => set("v2_ucb_alpha", v)} />
         </div>
         {Math.abs(weightSum - 1) > 1e-6 && (
           <div className="mt-3">

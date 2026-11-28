@@ -72,6 +72,30 @@ export interface TierSlot {
   key_vendor: string | null;
   key_hint: string | null;
   api_version: string | null;
+  card: ModelCardInfo | null;
+  calibrating: boolean;
+}
+
+/* Router v2: what is known about a tier model's ability. */
+export interface ModelCardInfo {
+  status: "trained" | "calibrated" | "calibrating" | "learning" | "uncalibrated" | "no_router";
+  n?: number;
+  level?: number;
+  abilities?: number[];
+  level_sd?: number;
+  router_version?: string;
+  calibration?: {
+    asked?: number;
+    scored?: number;
+    failed?: number;
+    cost_usd?: number;
+    uncertainty?: number | null;
+    target_uncertainty?: number;
+    max_items?: number;
+    error?: string | null;
+    note?: string;
+    finished_at?: string;
+  };
 }
 
 export interface ApiKey {
@@ -162,6 +186,9 @@ export interface ScoreParts {
   pacer?: number;
   predicted_quality?: number;
   predicted_reward?: number;
+  quality_sd?: number;
+  card?: string;
+  below_floor?: boolean;
   est_cost_usd: number;
   latency_s: number;
 }
@@ -189,7 +216,9 @@ export interface Policy {
   audit_preview_chars: number;
   allow_self_registration: boolean;
   users_may_pin_model: boolean;
-  routing_policy: "rules" | "frozen" | "bandit" | "linucb";
+  routing_policy: "rules" | "frozen" | "bandit" | "linucb" | "calibrated" | "calibrated_ucb";
+  quality_floor: number;
+  v2_ucb_alpha: number;
   reward_mode: "split" | "full";
   weights: { quality: number; cost: number; latency: number };
   c_ref_usd: number;

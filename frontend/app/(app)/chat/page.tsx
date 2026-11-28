@@ -758,7 +758,10 @@ function RouteDetails({ meta }: { meta: Partial<RouteMeta> }) {
   rows.push(["Timing", `First token ${fmtMs(meta.ttft_ms)} · routing ${fmtMs(meta.routing_overhead_ms)}${(meta.cache_read_tokens ?? 0) > 0 ? ` · cached ${meta.cache_read_tokens}` : ""}`]);
   if (meta.notices?.length) rows.push(["Notes", meta.notices.join(" ")]);
   if (meta.error) rows.push(["Error", meta.error]);
-  const scored = Object.entries(meta.scores ?? {}).sort((a, b) => b[1].total - a[1].total);
+  // Models that clear the quality floor first (only they can win), then by score.
+  const scored = Object.entries(meta.scores ?? {}).sort(
+    (a, b) => Number(!!a[1].below_floor) - Number(!!b[1].below_floor) || b[1].total - a[1].total,
+  );
   if (scored.length) rows.splice(1, 0, ["Scores", <ScoreTable key="scores" scored={scored} chosen={meta.model ?? null} />]);
   return (
     <dl className="mt-2 grid grid-cols-[84px_1fr] gap-x-3 gap-y-1.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
@@ -781,6 +784,7 @@ const f3 = (v: number | undefined) => (v === undefined ? "–" : v.toFixed(3));
 function ScoreTable({ scored, chosen }: { scored: [string, ScoreParts][]; chosen: string | null }) {
   const full = scored.some(([, p]) => p.predicted_reward !== undefined);
   const linucb = scored.some(([, p]) => p.bonus !== undefined);
+  const floor = scored.some(([, p]) => p.below_floor);
   const head = full ? ["Model", "Score"] : ["Model", "Score", "Quality", "Cost", "Speed", ...(linucb ? ["Bonus", "Pacer"] : [])];
   return (
     <div className="overflow-x-auto">
@@ -807,7 +811,12 @@ function ScoreTable({ scored, chosen }: { scored: [string, ScoreParts][]; chosen
                 <td className="py-0.5 pr-3">{f3(p.total)}</td>
                 {!full && (
                   <>
-                    <td className="py-0.5 pr-3" title={`predicted quality ${f3(p.predicted_quality)}`}>{f3(p.quality)}</td>
+                    <td
+                      className={`py-0.5 pr-3 ${p.below_floor ? "text-amber-700" : ""}`}
+                      title={`predicted quality ${f3(p.predicted_quality)}${p.quality_sd !== undefined ? ` ± ${f3(p.quality_sd)}` : ""}${p.card ? ` · ${p.card}` : ""}${p.below_floor ? " · below quality floor" : ""}`}
+                    >
+                      {f3(p.quality)}
+                    </td>
                     <td className="py-0.5 pr-3" title={`estimated cost $${p.est_cost_usd.toFixed(5)}`}>{f3(p.cost)}</td>
                     <td className="py-0.5 pr-3" title={`expected latency ${p.latency_s.toFixed(1)} s`}>{f3(p.speed)}</td>
                     {linucb && (
@@ -824,7 +833,8 @@ function ScoreTable({ scored, chosen }: { scored: [string, ScoreParts][]; chosen
         </tbody>
       </table>
       <p className="mt-1 text-slate-500">
-        {full ? "Learned reward per model." : `Score = quality + cost + speed${linucb ? " + bonus + pacer" : ""}. Higher wins.`}
+        {full ? "Learned reward per model." : `Score = quality + cost + speed${linucb ? " + bonus + pacer" : ""}. Higher wins`}
+        {!full && (floor ? ", among models that clear the quality floor; amber quality = predicted below the floor." : ".")}
       </p>
     </div>
   );

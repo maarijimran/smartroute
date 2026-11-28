@@ -46,7 +46,9 @@ function TierCard({ slot, title, hint, vendors, onSaved }: { slot: TierSlot; tit
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setForm(formFor(slot)), [slot]);
+  // Reset the form only when the saved settings change, not on every progress refresh.
+  const savedForm = JSON.stringify(formFor(slot));
+  useEffect(() => setForm(JSON.parse(savedForm) as Form), [savedForm]);
 
   const m = slot.model;
   const choices = vendors.filter((v) => (slot.tier === "local" ? v.adapter === "ollama" || v.adapter === "mock" : true));
@@ -105,6 +107,13 @@ function TierCard({ slot, title, hint, vendors, onSaved }: { slot: TierSlot; tit
       setError(errorText(err));
     }
   }
+
+  // Poll while a calibration runs, so progress shows without reloading.
+  useEffect(() => {
+    if (!slot.calibrating) return;
+    const timer = setInterval(() => void onSaved(), 3000);
+    return () => clearInterval(timer);
+  }, [slot.calibrating, onSaved]);
 
   const status = !slot.configured ? (
     <Badge>Not set</Badge>
@@ -194,6 +203,9 @@ function TierCard({ slot, title, hint, vendors, onSaved }: { slot: TierSlot; tit
             </Field>
           </>
         )}
+        {slot.configured && slot.card && slot.card.status !== "no_router" && (
+          <CardStatus slot={slot} onCalibrate={() => void act(() => api(`/api/tiers/${slot.tier}/calibrate`, { method: "POST" }))} />
+        )}
         <div className="flex flex-wrap items-center gap-3 md:col-span-3">
           <Button type="submit" disabled={busy}>
             Save
@@ -218,6 +230,39 @@ function TierCard({ slot, title, hint, vendors, onSaved }: { slot: TierSlot; tit
         </div>
       </form>
     </Card>
+  );
+}
+
+const CARD_LABEL: Record<string, string> = {
+  trained: "Trained",
+  calibrated: "Calibrated",
+  calibrating: "Calibrating",
+  learning: "Learning",
+  uncalibrated: "Uncalibrated",
+};
+
+/* Router v2: how well the router knows this model, and the Calibrate action. */
+function CardStatus({ slot, onCalibrate }: { slot: TierSlot; onCalibrate: () => void }) {
+  const card = slot.card!;
+  const c = card.calibration ?? {};
+  const running = slot.calibrating || card.status === "calibrating";
+  const tone = card.status === "uncalibrated" ? "amber" : card.status === "calibrated" || card.status === "trained" ? "green" : "slate";
+  const detail = running
+    ? `${c.scored ?? 0} of up to ${c.max_items ?? 60} questions${c.uncertainty != null ? ` · ±${c.uncertainty.toFixed(3)}` : ""}`
+    : card.status === "uncalibrated"
+      ? "Routing treats this model as average until it is calibrated"
+      : `Level ${card.level?.toFixed(2)} ± ${card.level_sd?.toFixed(2)} · ${card.n ?? 0} answers${c.cost_usd ? ` · $${c.cost_usd.toFixed(4)}` : ""}`;
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm md:col-span-3">
+      <span className="font-medium text-slate-800">Routing</span>
+      <Badge tone={tone}>{CARD_LABEL[card.status] ?? card.status}</Badge>
+      <span className="text-xs text-slate-500">{detail}</span>
+      {c.error && !running && <span className="text-xs text-red-700">{c.error}</span>}
+      {c.note && !running && <span className="text-xs text-slate-500">{c.note}</span>}
+      <Button type="button" variant="secondary" className="ml-auto" disabled={running || !slot.model?.enabled} onClick={onCalibrate}>
+        {running ? "Calibrating…" : card.status === "uncalibrated" ? "Calibrate" : "Recalibrate"}
+      </Button>
+    </div>
   );
 }
 
