@@ -261,6 +261,45 @@ Each run: **Save Version → Save & Run All (Commit)**. From the second run on, 
 
 To use the result, copy `router_v2.json` and `calibration_bank.json` into `backend/artifacts/` wherever the backend runs. Then choose **Calibrated** or **Calibrated UCB** in Settings → Policy, and press **Calibrate** on any tier whose model was not part of training.
 
+### 5b. Router v2 on the GPU server instead (one command, about 12–18 hours)
+
+The same stages run with `scripts/run_router_v2_pipeline.py`. On the RTX 4000 Ada there are no session limits, so it can run overnight. Run it again after any interruption; it continues where it stopped.
+
+**1. Save the baseline's raw files first**, in the server's existing checkout. The training writes a new workload and must not touch them:
+
+```powershell
+cd <existing checkout>\backend
+git pull
+.venv\Scripts\python scripts\snapshot_results.py --name baseline_per_tier_ridge --date 2026-11-26 --include-raw --note "Baseline: per-tier ridge, frozen v3, local stand-in tiers"
+cd ..; git add results; git commit -m "Baseline raw results from the server"; git push
+```
+
+**2. Train in a separate checkout with its own database**, reusing the existing virtual environment:
+
+```powershell
+git clone https://github.com/maarijimran/smartroute.git D:\SmartRoute\v2-training
+cd D:\SmartRoute\v2-training\backend
+$PY = "<existing checkout>\backend\.venv\Scripts\python.exe"
+$env:SMARTROUTE_DATABASE_URL = "sqlite:///D:/SmartRoute/v2-training/train.db"
+$env:SMARTROUTE_EMBEDDINGS_ENABLED = "true"
+$env:SMARTROUTE_SEED_MOCK_MODELS = "false"
+$env:SMARTROUTE_PII_PRESIDIO = "false"; $env:SMARTROUTE_PII_GLINER = "false"   # all models are local; frees GPU memory
+$env:SMARTROUTE_OCR_BACKEND = "off"
+$env:SMARTROUTE_REQUEST_TIMEOUT_S = "300"
+$env:HF_HOME = "D:\SmartRoute\hf-cache"
+powercfg /change standby-timeout-ac 0      # do not sleep during the run
+& $PY scripts\run_router_v2_pipeline.py
+```
+
+It pulls the models it is missing (phi4:14b, llama3.2:3b, mistral-small:24b) and ends by printing `stages done` and `remaining`.
+
+**3. Publish the result** from `D:\SmartRoute\v2-training`:
+
+```powershell
+git add backend/artifacts/router_v2.json backend/artifacts/calibration_bank.json results
+git commit -m "Router v2 trained on the GPU server"; git push
+```
+
 ## 6. What the runs showed
 
 Full results and their interpretation are in [PROGRESS.md](PROGRESS.md) under "Server session, 26 November". In short:
